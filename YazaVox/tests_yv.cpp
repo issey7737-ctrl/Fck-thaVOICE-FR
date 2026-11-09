@@ -287,7 +287,7 @@ int main()
             Engine e; e.prepare (sr, 512);
             float v[Count]; defaults (v);
             v[compOn] = v[eqOn] = v[dlyOn] = v[revOn] = 0; v[fxOn] = 1; v[deessOn] = 1; v[satOn] = 0; v[widthOn] = 0;
-            v[deessFreq] = 6500; v[deessAmt] = 100; v[deessRange] = 12; v[deessMode] = (float) mode;
+            v[deessFreq] = 5200; v[deessHigh] = 9000; v[deessAmt] = 100; v[deessRange] = 12; v[deessBand] = (float) mode;
             e.setParams (v);
             auto x = mk (200, 0.1, 6500, 0.3); auto L = x, R = x; run (e, L, R, 512);
             const size_t a = N / 2, b = N - 1000;

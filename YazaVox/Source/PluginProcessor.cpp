@@ -27,8 +27,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout YazaVoxProcessor::createLayo
 YazaVoxProcessor::YazaVoxProcessor()
     : AudioProcessor (BusesProperties()
                           .withInput ("Input", juce::AudioChannelSet::stereo(), true)
-                          .withOutput ("Output", juce::AudioChannelSet::stereo(), true)
-                          .withInput ("Prod (sidechain)", juce::AudioChannelSet::stereo(), false)),
+                          .withOutput ("Output", juce::AudioChannelSet::stereo(), true)),   // aucune entree sidechain : le plugin ne lit QUE sa propre piste
       apvts (*this, nullptr, "STATE", createLayout())
 {
     for (int i = 0; i < Count; ++i) raw[(size_t) i] = apvts.getRawParameterValue (kDefs[i].id);
@@ -38,9 +37,7 @@ YazaVoxProcessor::YazaVoxProcessor()
 bool YazaVoxProcessor::isBusesLayoutSupported (const BusesLayout& l) const
 {
     const auto in = l.getMainInputChannelSet(), out = l.getMainOutputChannelSet();
-    if (! (in == out && (in == juce::AudioChannelSet::stereo() || in == juce::AudioChannelSet::mono()))) return false;
-    const auto sc = l.inputBuses.size() > 1 ? l.getChannelSet (true, 1) : juce::AudioChannelSet::disabled();      // entree sidechain optionnelle : la prod, pour AUTO VOIX
-    return sc.isDisabled() || sc == juce::AudioChannelSet::stereo() || sc == juce::AudioChannelSet::mono();
+    return in == out && (in == juce::AudioChannelSet::stereo() || in == juce::AudioChannelSet::mono()) && l.inputBuses.size() == 1;
 }
 
 void YazaVoxProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)

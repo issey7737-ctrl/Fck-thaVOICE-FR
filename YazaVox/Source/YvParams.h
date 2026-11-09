@@ -57,10 +57,13 @@ struct Def
     /* ---- FX ---- */ \
     X(fxOn,       "fxOn",       "ON",       0,   1,   1,    1,    1,   KBool,   "",         MFx,     "") \
     X(deessOn,    "deessOn",    "ON",       0,   1,   1,    1,    1,   KBool,   "",         MFx,     "DE-ESSER") \
-    X(deessFreq,  "deessFreq",  "FREQ",     3000, 10000, 6500, 10,  0.5, KFloat,  " Hz",     MFx,     "DE-ESSER") \
-    X(deessAmt,   "deessAmt",   "AMOUNT",   0,   100, 40,   1,    1,   KFloat,  " %",       MFx,     "DE-ESSER") \
+    X(deessFreq,  "deessFreq",  "LOW",      2000, 12000, 5000, 10,  0.5, KFloat,  " Hz",     MFx,     "DE-ESSER") \
+    X(deessHigh,  "deessHigh",  "HIGH",     4000, 18000, 10000, 10, 0.5, KFloat,  " Hz",     MFx,     "DE-ESSER") \
+    X(deessAmt,   "deessAmt",   "THRESH",   0,   100, 50,   1,    1,   KFloat,  " %",       MFx,     "DE-ESSER") \
     X(deessRange, "deessRange", "RANGE",    0,   24,  10,   0.1,  1,   KFloat,  " dB",      MFx,     "DE-ESSER") \
-    X(deessMode,  "deessMode",  "MODE",     0,   1,   0,    1,    1,   KChoice, "Vocal|Wide", MFx,   "DE-ESSER") \
+    X(deessMode,  "deessMode",  "MODE",     0,   1,   0,    1,    1,   KChoice, "Single vocal|Allround", MFx, "DE-ESSER") \
+    X(deessBand,  "deessBand",  "BAND",     0,   1,   0,    1,    1,   KChoice, "Split band|Wide band", MFx, "DE-ESSER") \
+    X(deessListen,"deessListen","LISTEN",   0,   1,   0,    1,    1,   KBool,   "",         MFx,     "DE-ESSER") \
     X(satOn,      "satOn",      "ON",       0,   1,   1,    1,    1,   KBool,   "",         MFx,     "SATURATION") \
     X(satDrive,   "satDrive",   "DRIVE",    0,   100, 25,   1,    1,   KFloat,  " %",       MFx,     "SATURATION") \
     X(satTone,    "satTone",    "TONE",    -100, 100, 0,    1,    1,   KFloat,  "",         MFx,     "SATURATION") \

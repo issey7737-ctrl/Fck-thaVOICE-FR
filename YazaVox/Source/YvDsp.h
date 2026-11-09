@@ -365,57 +365,143 @@ private:
 
 //==============================================================================
 // FX
+// Oscilloscope du de-esser : 1 trame ~10 ms (crete de l'entree, crete de la bande de sifflantes, reduction), lue par l'interface.
+struct DsScope
+{
+    static constexpr int N = 256;
+    std::array<std::atomic<float>, N> in {}, sib {}, gr {};
+    std::atomic<int> pos { 0 };
+};
+
+// DE-ESSER (dans l'esprit d'un Pro-DS) :
+//  - detection dans la bande [LOW..HIGH] (Butterworth 4e ordre), enveloppe rapide ;
+//  - SINGLE VOCAL : seuil RELATIF au niveau de la voix (marche quel que soit le niveau d'enregistrement) ; ALLROUND : seuil absolu ;
+//  - SPLIT BAND : une cloche dynamique centree sur la bande (le reste du spectre n'est pas touche) ; WIDE BAND : baisse tout le signal ;
+//  - RANGE = reduction maximale ; genou doux ; LISTEN = on entend uniquement la bande detectee.
 class DeEsser
 {
 public:
+    DsScope scope;
+    std::atomic<float> grDb { 0.f };
+
     void prepare (double fs)
     {
-        sr = fs; envB = envT = 0; gdB = 0;
-        for (auto& b : bp) b.reset();
-        for (auto& b : det) b.reset();
-        envRel = std::exp (-1.0 / (0.006 * sr));
-        envAtk = 1.0 - std::exp (-1.0 / (0.0002 * sr));
-        gAtk = 1.0 - std::exp (-1.0 / (0.0003 * sr));
-        gRel = 1.0 - std::exp (-1.0 / (0.022 * sr));
-        f0 = -1;
+        sr = fs;
+        for (auto& c : ch) c = Chan();
+        envB = envT = 0; gdB = 0; fAcc = 0; accIn = accSib = 0; accGr = 0;
+        envAtk = 1.0 - std::exp (-1.0 / (0.00006 * sr));
+        envRel = std::exp (-1.0 / (0.0045 * sr));
+        refAtk = 1.0 - std::exp (-1.0 / (0.020 * sr));
+        refRel = std::exp (-1.0 / (0.30 * sr));
+        gAtk = 1.0 - std::exp (-1.0 / (0.00035 * sr));
+        gRel = 1.0 - std::exp (-1.0 / (0.028 * sr));
+        frame = std::max (64, (int) (sr * 0.010));
+        for (auto& c : ch) c.refHp.highPass (sr, 160.0, 0.7071);
+        f0 = hi0 = -1;
     }
-    // Pro-DS : AMOUNT = sensibilite (seuil relatif), RANGE = reduction maximale, MODE Vocal = ne creuse que la bande des sifflantes,
-    // Wide = baisse tout le signal.
     void setup (const float* v)
     {
         amt = clampd (v[deessAmt] / 100.0, 0.0, 1.0);
-        thrIdx = 0.85 - 0.55 * amt;          // detection par rapport spectral : independante du niveau du chanteur
         range = clampd (v[deessRange], 0.0, 24.0);
-        wide = v[deessMode] > 0.5f;
-        if (std::abs (v[deessFreq] - f0) > 0.5)
+        vocal = v[deessMode] < 0.5f;
+        wide = v[deessBand] > 0.5f;
+        listen = v[deessListen] > 0.5f;
+        const double lo = clampd (v[deessFreq], 1500.0, 0.40 * sr), hi = clampd (std::max ((double) v[deessHigh], lo * 1.25), lo * 1.25, 0.45 * sr);
+        // seuils : amt 0 = pas de reduction, amt 100 = tres sensible
+        relThr = -4.0 - 0.28 * amt * 100.0 * 0.6;        // SINGLE VOCAL : bande / voix (dB)
+        absThr = -amt * 60.0;                            // ALLROUND : niveau absolu de la bande (dBFS)
+        if (std::abs (lo - f0) > 0.5 || std::abs (hi - hi0) > 0.5)
         {
-            f0 = v[deessFreq];
-            for (auto& b : bp) b.bandPass (sr, f0, 1.1);
-            for (auto& b : det) b.bandPass (sr, f0, 1.6);
+            f0 = lo; hi0 = hi;
+            for (auto& c : ch)
+            {
+                c.h1.highPass (sr, lo, 0.5412); c.h2.highPass (sr, lo, 1.3066);
+                c.l1.lowPass  (sr, hi, 0.5412); c.l2.lowPass  (sr, hi, 1.3066);
+            }
+            const double fc = std::sqrt (lo * hi);
+            // deux cloches (bas / haut de la bande) pour une reduction plate sur toute la zone [LOW..HIGH]
+            const double fa = lo * std::pow (hi / lo, 0.28), fb = lo * std::pow (hi / lo, 0.72);
+            q = clampd (0.55 * fc / (hi - lo) + 0.2, 0.45, 1.4);
+            w0c = std::cos (2.0 * kPi * fa / sr); alpha = std::sin (2.0 * kPi * fa / sr) / (2.0 * q);
+            w1c = std::cos (2.0 * kPi * fb / sr); alpha1 = std::sin (2.0 * kPi * fb / sr) / (2.0 * q);
         }
     }
     inline void process (double& l, double& r) noexcept
     {
-        const double bl = bp[0].process (l), br = bp[1].process (r);
-        const double dl = det[0].process (l), dr = det[1].process (r);
-        const double band = std::max (std::abs (dl), std::abs (dr)) * 1.6, tot = std::max (std::abs (l), std::abs (r));
-        envB = band > envB ? envB + (band - envB) * envAtk : band + (envB - band) * envRel;
-        envT = tot > envT ? envT + (tot - envT) * envAtk : tot + (envT - tot) * envRel;
-        double targetDb = 0.0;
-        if (amt > 0.001 && range > 0.01 && envT > 0.003)   // > -50 dBFS
+        const double x[2] = { l, r };
+        double band[2], bpk = 0, tpk = 0;
+        for (int c = 0; c < 2; ++c)
         {
-            const double x = clampd ((envB / (envT + 1e-9) - thrIdx) / 0.2, 0.0, 1.0);
-            targetDb = -range * x * x * (3.0 - 2.0 * x);       // genou doux
+            auto& s = ch[(size_t) c];
+            band[c] = s.l2.process (s.l1.process (s.h2.process (s.h1.process (x[c]))));
+            bpk = std::max (bpk, std::abs (band[c]));
+            tpk = std::max (tpk, std::abs (s.refHp.process (x[c])));
         }
-        gdB += (targetDb - gdB) * (targetDb < gdB ? gAtk : gRel);
-        const double g = dbToLin (gdB);
-        if (wide) { l *= g; r *= g; }
-        else      { l -= bl * (1.0 - g); r -= br * (1.0 - g); }
+        envB = bpk > envB ? envB + (bpk - envB) * envAtk : bpk + (envB - bpk) * envRel;
+        envT = tpk > envT ? envT + (tpk - envT) * refAtk : tpk + (envT - tpk) * refRel;
+
+        double target = 0.0;
+        const double bDb = 20.0 * std::log10 (envB + 1e-9), tDb = 20.0 * std::log10 (envT + 1e-9);
+        if (amt > 0.001 && range > 0.01 && tDb > -58.0 && bDb > -75.0)
+        {
+            const double e = vocal ? (bDb - tDb) - relThr : bDb - absThr;
+            const double kw = 3.0;                                  // demi-genou
+            double gr = e <= -kw ? 0.0 : (e >= kw ? e : (e + kw) * (e + kw) / (4.0 * kw));
+            target = -std::min (gr, range);
+        }
+        gdB += (target - gdB) * (target < gdB ? gAtk : gRel);
+
+        double yl = l, yr = r;
+        if (gdB < -0.02)
+        {
+            if (wide) { const double g = dbToLin (gdB); yl *= g; yr *= g; }
+            else
+            {
+                const double gb = gdB * 0.95;                          // 2 cloches qui se recouvrent
+                const double A = std::exp (gb * 0.05756462732485115);   // 10^(dB/40)
+                const double c0 = (1 + alpha * A), c1 = -2 * w0c, c2 = 1 - alpha * A, d0 = 1.0 / (1 + alpha / A), d2 = 1 - alpha / A;
+                const double e0 = (1 + alpha1 * A), e1 = -2 * w1c, e2 = 1 - alpha1 * A, f0i = 1.0 / (1 + alpha1 / A), f2 = 1 - alpha1 / A;
+                for (int c = 0; c < 2; ++c)
+                {
+                    auto& s = ch[(size_t) c];
+                    const double xin = x[c];
+                    const double y = (c0 * d0) * xin + s.pz1;
+                    s.pz1 = (c1 * d0) * xin - (c1 * d0) * y + s.pz2;
+                    s.pz2 = (c2 * d0) * xin - (d2 * d0) * y;
+                    const double z = (e0 * f0i) * y + s.qz1;
+                    s.qz1 = (e1 * f0i) * y - (e1 * f0i) * z + s.qz2;
+                    s.qz2 = (e2 * f0i) * y - (f2 * f0i) * z;
+                    (c == 0 ? yl : yr) = z;
+                }
+            }
+        }
+        else for (auto& s : ch) s.pz1 = s.pz2 = s.qz1 = s.qz2 = 0;                 // identite : etat remis a zero (pas de residu)
+        if (listen) { yl = band[0]; yr = band[1]; }
+        l = yl; r = yr;
+
+        // oscilloscope + compteur de reduction
+        accIn = std::max (accIn, std::max (std::abs (x[0]), std::abs (x[1])));
+        accSib = std::max (accSib, bpk);
+        accGr = std::min (accGr, gdB);
+        if (++fAcc >= frame)
+        {
+            const int p = scope.pos.load (std::memory_order_relaxed);
+            scope.in[(size_t) p].store ((float) accIn, std::memory_order_relaxed);
+            scope.sib[(size_t) p].store ((float) accSib, std::memory_order_relaxed);
+            scope.gr[(size_t) p].store ((float) accGr, std::memory_order_relaxed);
+            scope.pos.store ((p + 1) % DsScope::N, std::memory_order_release);
+            grDb.store ((float) accGr, std::memory_order_relaxed);
+            fAcc = 0; accIn = accSib = 0; accGr = 0;
+        }
     }
 private:
-    double sr = 48000, f0 = -1, amt = 0.4, thrIdx = 0.6, range = 10, envB = 0, envT = 0, envRel = 0, envAtk = 0, gdB = 0, gAtk = 0, gRel = 0;
-    bool wide = false;
-    std::array<Biquad, 2> bp, det;
+    struct Chan { Biquad h1, h2, l1, l2, refHp; double pz1 = 0, pz2 = 0, qz1 = 0, qz2 = 0; };
+    double sr = 48000, f0 = -1, hi0 = -1, amt = 0.5, range = 10, relThr = -10, absThr = -30, q = 1, w0c = 0, alpha = 0.1, w1c = 0, alpha1 = 0.1;
+    double envB = 0, envT = 0, envAtk = 0, envRel = 0, refAtk = 0, refRel = 0, gdB = 0, gAtk = 0, gRel = 0;
+    double accIn = 0, accSib = 0, accGr = 0;
+    int frame = 480, fAcc = 0;
+    bool vocal = true, wide = false, listen = false;
+    std::array<Chan, 2> ch;
 };
 
 // AIR (dans l'esprit d'un exciteur "Mid Air / High Air") : harmoniques generees a partir de la bande 2.5-7 kHz (non-lineaire douce,
@@ -1243,6 +1329,8 @@ private:
 class Engine
 {
 public:
+    const DsScope& dsScope() const { return des.scope; }
+    float dsGrNow() const { return des.grDb.load(); }
     std::atomic<float> inPk { 0.f }, outPk { 0.f }, grDb { 0.f };
     int latency() const noexcept { return tune.latency() + lim.latency(); }
     const Tune& tuner() const noexcept { return tune; }

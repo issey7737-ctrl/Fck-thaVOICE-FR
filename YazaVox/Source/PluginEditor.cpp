@@ -798,7 +798,8 @@ SimpleView::SimpleView (YazaVoxProcessor& p, std::function<void()> pro) : proc (
     nextBtn.onClick = [this] { selectPreset ((proc.getCurrentPreset() + 1) % YazaVoxProcessor::presetNames().size()); };
     proBtn.onClick = [this] { if (onPro) onPro(); };
     autoVoice.onClick = [this] { autoClick (proc); };
-    for (auto* b : { &autoIn, &autoVoice, &prevBtn, &nextBtn, &proBtn }) addAndMakeVisible (*b);
+    dsBtn.onClick = [this] { if (onDs) onDs(); };
+    for (auto* b : { &autoIn, &autoVoice, &prevBtn, &nextBtn, &proBtn, &dsBtn }) addAndMakeVisible (*b);
     presets.addItemList (YazaVoxProcessor::presetNames(), 1);
     presets.setSelectedItemIndex (proc.getCurrentPreset(), juce::dontSendNotification);
     presets.setJustificationType (juce::Justification::centred);
@@ -908,7 +909,7 @@ void SimpleView::resized()
     const int ty = fy_ (0.018f), th = fy_ (0.07f);
     int x = fx_ (0.432f);
     auto put = [&] (juce::Component& c, float w) { c.setBounds (x, ty, fx_ (w), th); x += fx_ (w + 0.006f); };
-    put (lowCut, 0.06f); put (autoIn, 0.075f); put (autoVoice, 0.1f); put (prevBtn, 0.03f); put (presets, 0.14f); put (nextBtn, 0.03f); put (proBtn, 0.055f);
+    put (lowCut, 0.055f); put (autoIn, 0.07f); put (autoVoice, 0.095f); put (prevBtn, 0.028f); put (presets, 0.125f); put (nextBtn, 0.028f); put (dsBtn, 0.045f); put (proBtn, 0.05f);
 
     // bandes de droite
     const int bx = fx_ (0.47f), bw = fx_ (0.52f);
@@ -1059,6 +1060,310 @@ void SimpleView::paint (juce::Graphics& g)
     g.drawText ("OUT", outKnob->getX() - 110, outBar.getY() - 8, 104, outBar.getHeight() + 16, juce::Justification::centredRight);
 }
 
+
+//==============================================================================
+// DE-ESSER plein ecran
+static const juce::Colour dsYellow { 0xffffd23c }, dsGreen { 0xff8be04a }, dsBg1 { 0xff15110d }, dsBg2 { 0xff070605 };
+
+float DsBandBar::xOf (double f) const
+{
+    const float m = 26.f, w = (float) getWidth() - 2.f * m;
+    return m + w * (float) (std::log (f / 2000.0) / std::log (18000.0 / 2000.0));
+}
+double DsBandBar::fOf (float x) const
+{
+    const float m = 26.f, w = (float) getWidth() - 2.f * m;
+    return 2000.0 * std::pow (18000.0 / 2000.0, juce::jlimit (0.f, 1.f, (x - m) / w));
+}
+void DsBandBar::paint (juce::Graphics& g)
+{
+    const auto r = getLocalBounds().toFloat();
+    const float ty = r.getY() + r.getHeight() * 0.40f, th = std::max (8.f, r.getHeight() * 0.22f);
+    g.setColour (juce::Colour (0xff0b0907));
+    g.fillRoundedRectangle (r.getX() + 12, ty, r.getWidth() - 24, th, 3.f);
+    g.setColour (col::edge.brighter (0.3f));
+    g.drawRoundedRectangle (r.getX() + 12, ty, r.getWidth() - 24, th, 3.f, 1.f);
+    // graduations
+    g.setFont (plain (std::clamp (r.getHeight() * 0.22f, 8.f, 11.f)));
+    for (double f : { 2000.0, 3000.0, 4000.0, 6000.0, 8000.0, 10000.0, 14000.0, 18000.0 })
+    {
+        const float x = xOf (f);
+        g.setColour (juce::Colours::white.withAlpha (0.22f));
+        g.drawVerticalLine ((int) x, ty + 2, ty + th - 2);
+        g.setColour (col::textDim);
+        g.drawText (f >= 10000 ? juce::String (f / 1000.0, 0) + "k" : juce::String (f / 1000.0, f == 3000.0 ? 0 : 0) + "k", (int) x - 16, (int) (ty + th + 1), 32, 12, juce::Justification::centred);
+    }
+    const double lo = proc.getParam (deessFreq), hi = std::max ((double) proc.getParam (deessHigh), lo * 1.25);
+    const float xl = xOf (lo), xh = xOf (hi);
+    g.setGradientFill (juce::ColourGradient (juce::Colour (0xffffb81c).withAlpha (0.55f), 0, ty, juce::Colour (0xffd98a00).withAlpha (0.30f), 0, ty + th, false));
+    g.fillRect (xl, ty + 1, xh - xl, th - 2);
+    for (int k = 0; k < 2; ++k)
+    {
+        const float x = k == 0 ? xl : xh;
+        juce::Path tri;
+        const float s = std::clamp (th * 0.55f, 8.f, 14.f);
+        tri.addTriangle (x - s * (k == 0 ? 0.0f : 1.0f), ty - s, x + s * (k == 0 ? 1.0f : 0.0f), ty - s, x, ty + th);
+        g.setColour (juce::Colour (0xffe9e3d8)); g.fillPath (tri);
+        g.setColour (juce::Colours::black.withAlpha (0.6f)); g.strokePath (tri, juce::PathStrokeType (1.f));
+    }
+    g.setColour (dsYellow);
+    g.setFont (bold (std::clamp (r.getHeight() * 0.28f, 10.f, 14.f)));
+    g.drawText (juce::String (lo / 1000.0, 1) + " kHz", 4, 0, 90, (int) (ty - 2), juce::Justification::centredLeft);
+    g.drawText (juce::String (hi / 1000.0, 1) + " kHz", getWidth() - 94, 0, 90, (int) (ty - 2), juce::Justification::centredRight);
+}
+void DsBandBar::mouseDown (const juce::MouseEvent& e)
+{
+    const double lo = proc.getParam (deessFreq), hi = std::max ((double) proc.getParam (deessHigh), lo * 1.25);
+    const float x = e.position.x, xl = xOf (lo), xh = xOf (hi);
+    drag = std::abs (x - xl) < 14.f && std::abs (x - xl) <= std::abs (x - xh) ? 0 : (std::abs (x - xh) < 14.f ? 1 : (x > xl && x < xh ? 2 : (std::abs (x - xl) < std::abs (x - xh) ? 0 : 1)));
+    grabLo = lo; grabHi = hi; grabX = x;
+    for (int id : { (int) deessFreq, (int) deessHigh }) proc.apvts.getParameter (kDefs[id].id)->beginChangeGesture();
+}
+void DsBandBar::mouseDrag (const juce::MouseEvent& e)
+{
+    if (drag < 0) return;
+    const auto& dl = kDefs[deessFreq]; const auto& dh = kDefs[deessHigh];
+    double lo = grabLo, hi = grabHi;
+    if (drag == 2)
+    {
+        const double ratio = fOf (e.position.x) / fOf (grabX);
+        lo = grabLo * ratio; hi = grabHi * ratio;
+        if (lo < dl.lo) { hi *= dl.lo / lo; lo = dl.lo; }
+        if (hi > dh.hi) { lo *= dh.hi / hi; hi = dh.hi; }
+    }
+    else if (drag == 0) lo = fOf (e.position.x);
+    else hi = fOf (e.position.x);
+    lo = juce::jlimit ((double) dl.lo, (double) dl.hi, lo);
+    hi = juce::jlimit ((double) dh.lo, (double) dh.hi, hi);
+    if (drag == 0) lo = std::min (lo, hi / 1.25);
+    if (drag == 1) hi = std::max (hi, lo * 1.25);
+    for (auto [id, v] : { std::pair<int, double> { (int) deessFreq, lo }, std::pair<int, double> { (int) deessHigh, hi } })
+        if (auto* p = proc.apvts.getParameter (kDefs[id].id)) p->setValueNotifyingHost (p->convertTo0to1 ((float) v));
+    repaint();
+}
+void DsBandBar::mouseUp (const juce::MouseEvent&)
+{
+    if (drag < 0) return;
+    for (int id : { (int) deessFreq, (int) deessHigh }) proc.apvts.getParameter (kDefs[id].id)->endChangeGesture();
+    drag = -1;
+}
+
+void DsSeg::paint (juce::Graphics& g)
+{
+    const auto r = getLocalBounds().toFloat().reduced (1.f);
+    const int sel = proc.getParam (idx) > 0.5f ? 1 : 0;
+    for (int k = 0; k < 2; ++k)
+    {
+        auto b = k == 0 ? r.withWidth (r.getWidth() / 2) : r.withTrimmedLeft (r.getWidth() / 2);
+        const bool on = k == sel;
+        g.setGradientFill (juce::ColourGradient (on ? juce::Colour (0xff4a3a14) : juce::Colour (0xff1e1a15), 0, b.getY(), on ? juce::Colour (0xff2b200a) : juce::Colour (0xff100d0a), 0, b.getBottom(), false));
+        g.fillRoundedRectangle (b.reduced (1.f), 4.f);
+        g.setColour (on ? dsYellow.withAlpha (0.9f) : col::edge.brighter (0.4f));
+        g.drawRoundedRectangle (b.reduced (1.f), 4.f, 1.1f);
+        g.setColour (on ? dsYellow : juce::Colours::white.withAlpha (0.55f));
+        g.setFont (bold (std::clamp (r.getHeight() * 0.32f, 9.f, 13.f)));
+        g.drawFittedText ((k == 0 ? n0 : n1).toUpperCase(), b.toNearestInt(), juce::Justification::centred, 1, 0.7f);
+    }
+}
+void DsSeg::mouseDown (const juce::MouseEvent& e)
+{
+    setReal (proc, idx, e.position.x > (float) getWidth() * 0.5f ? 1.f : 0.f);
+    repaint();
+}
+
+void DsListen::paint (juce::Graphics& g)
+{
+    const bool on = proc.getParam (deessListen) > 0.5f;
+    const auto r = getLocalBounds().toFloat().reduced (3.f);
+    const float d = std::min (r.getWidth(), r.getHeight());
+    const auto c = r.getCentre();
+    const auto circle = juce::Rectangle<float> (d, d).withCentre (c);
+    if (on) { g.setColour (dsYellow.withAlpha (0.22f)); g.fillEllipse (circle.expanded (d * 0.12f)); }
+    g.setGradientFill (juce::ColourGradient (on ? juce::Colour (0xff5b4512) : juce::Colour (0xff2a2520), c.x, circle.getY(), on ? juce::Colour (0xff2b200a) : juce::Colour (0xff0f0d0b), c.x, circle.getBottom(), false));
+    g.fillEllipse (circle);
+    g.setColour (on ? dsYellow : col::edge.brighter (0.5f));
+    g.drawEllipse (circle, 1.6f);
+    // casque
+    g.setColour (on ? dsYellow : juce::Colours::white.withAlpha (0.65f));
+    juce::Path hp;
+    const float rr = d * 0.26f;
+    hp.addArc (c.x - rr, c.y - rr, rr * 2, rr * 2, -1.62f, 1.62f, true);
+    g.strokePath (hp, juce::PathStrokeType (d * 0.055f));
+    g.fillRoundedRectangle (c.x - rr - d * 0.06f, c.y - d * 0.02f, d * 0.12f, d * 0.24f, d * 0.04f);
+    g.fillRoundedRectangle (c.x + rr - d * 0.06f, c.y - d * 0.02f, d * 0.12f, d * 0.24f, d * 0.04f);
+}
+void DsListen::mouseDown (const juce::MouseEvent&)
+{
+    setReal (proc, deessListen, proc.getParam (deessListen) > 0.5f ? 0.f : 1.f);
+    repaint();
+}
+
+DsPanel::DsPanel (YazaVoxProcessor& p, std::function<void()> back)
+    : proc (p), onBack (std::move (back)),
+      thr (p, deessAmt, "THRESHOLD", {}, {}), rng (p, deessRange, "RANGE", {}, {}),
+      mode (p, deessMode, "Single vocal", "Allround"), band (p, deessBand, "Split band", "Wide band"), bar (p), listen (p)
+{
+    setLookAndFeel (&laf);
+    backBtn.onClick = [this] { if (onBack) onBack(); };
+    addAndMakeVisible (backBtn);
+    power.setClickingTogglesState (true);
+    addAndMakeVisible (power);
+    powerAtt = std::make_unique<ButtonAtt> (p.apvts, "deessOn", power);
+    power.onClick = [this] { if (power.getToggleState()) setReal (proc, fxOn, 1.f); };
+    // le bouton THRESHOLD montre le seuil equivalent en dB (plus on tourne, plus le de-esser est sensible)
+    thr.slider.textFromValueFunction = [] (double v) { return juce::String (-0.6 * v, 0) + " dB"; };
+    thr.slider.setTextValueSuffix ("");
+    for (auto* c : { (juce::Component*) &thr, (juce::Component*) &rng, (juce::Component*) &mode, (juce::Component*) &band, (juce::Component*) &bar, (juce::Component*) &listen }) addAndMakeVisible (*c);
+}
+
+void DsPanel::resized()
+{
+    auto r = getLocalBounds().reduced (14, 10);
+    auto top = r.removeFromTop (std::clamp (getHeight() / 14, 30, 44));
+    backBtn.setBounds (top.removeFromLeft (110));
+    power.setBounds (top.removeFromRight (top.getHeight()).reduced (4));
+    titleArea = top.reduced (10, 0);
+    r.removeFromTop (6);
+    auto bottom = r.removeFromBottom (std::clamp ((int) ((float) r.getHeight() * 0.44f), 150, 300));
+    r.removeFromBottom (8);
+    meterArea = r.removeFromRight (std::clamp (getWidth() / 24, 34, 54));
+    r.removeFromRight (8);
+    display = r;
+
+    const int kw = std::clamp (bottom.getWidth() / 6, 90, 190);
+    auto left = bottom.removeFromLeft (kw);
+    listen.setBounds (left.withSizeKeepingCentre (std::min (left.getWidth(), left.getHeight() * 7 / 10), std::min (left.getWidth(), left.getHeight() * 7 / 10)));
+    auto kcell = [&] (AmberKnob& k, juce::Rectangle<int>& val)
+    {
+        auto a = bottom.removeFromLeft (kw + 20);
+        const int kh = std::min (a.getHeight() - 26, 170);
+        a = a.withSizeKeepingCentre (a.getWidth(), kh + 26);
+        k.setBounds (a.removeFromTop (kh));
+        k.name.setFont (bold (13.f));
+        val = a;
+    };
+    kcell (thr, valThr); kcell (rng, valRng);
+    bottom.removeFromLeft (14);
+    // colonne centrale : modes + bande
+    const int rh = std::clamp (bottom.getHeight() / 5, 28, 46);
+    mode.setBounds (bottom.removeFromTop (rh));
+    bottom.removeFromTop (8);
+    band.setBounds (bottom.removeFromTop (rh));
+    bottom.removeFromTop (12);
+    barArea = bottom;
+    bar.setBounds (barArea.removeFromTop (std::min (barArea.getHeight(), 100)));
+}
+
+void DsPanel::paint (juce::Graphics& g)
+{
+    g.fillAll (juce::Colour (0xff0b0807));
+    g.setGradientFill (juce::ColourGradient (juce::Colour (0xff2a0d10), 0, 0, juce::Colour (0xff0b0807), 0, (float) getHeight() * 0.6f, false));
+    g.fillAll();
+    g.setFont (bold ((float) titleArea.getHeight() * 0.62f));
+    const juce::String t1 = "Fck Tha", t2 = "VOICE", t3 = "   DE-ESSER";
+    juce::GlyphArrangement ga;
+    const auto tf = g.getCurrentFont();
+    const float w1 = tf.getStringWidthFloat (t1), w2 = tf.getStringWidthFloat (t2), w3 = tf.getStringWidthFloat (t3);
+    float x0 = (float) titleArea.getCentreX() - (w1 + w2 + w3) * 0.5f;
+    const auto tb = titleArea.toFloat();
+    g.setColour (col::text);      g.drawText (t1, juce::Rectangle<float> (x0, tb.getY(), w1 + 2, tb.getHeight()), juce::Justification::centredLeft, false);
+    g.setColour (col::redBright); g.drawText (t2, juce::Rectangle<float> (x0 + w1, tb.getY(), w2 + 2, tb.getHeight()), juce::Justification::centredLeft, false);
+    g.setColour (dsYellow);       g.drawText (t3, juce::Rectangle<float> (x0 + w1 + w2, tb.getY(), w3 + 4, tb.getHeight()), juce::Justification::centredLeft, false);
+
+    // ---- ecran forme d'onde ----
+    const auto dr = display.toFloat();
+    g.setGradientFill (juce::ColourGradient (dsBg1, 0, dr.getY(), dsBg2, 0, dr.getBottom(), false));
+    g.fillRoundedRectangle (dr, 6.f);
+    g.setColour (col::edge.brighter (0.5f));
+    g.drawRoundedRectangle (dr, 6.f, 1.3f);
+    g.saveState();
+    g.reduceClipRegion (display.reduced (2));
+    const float cy = dr.getCentreY(), hh = dr.getHeight() * 0.5f - 6.f;
+    // grille dB
+    g.setFont (plain (10.f));
+    for (int db : { -3, -6, -12, -24 })
+    {
+        const float h = hh * std::sqrt ((float) dbToLin ((double) db));
+        g.setColour (juce::Colours::white.withAlpha (0.07f));
+        g.drawHorizontalLine ((int) (cy - h), dr.getX() + 4, dr.getRight() - 4);
+        g.drawHorizontalLine ((int) (cy + h), dr.getX() + 4, dr.getRight() - 4);
+        g.setColour (col::textDim.withAlpha (0.7f));
+        g.drawText (juce::String (db), (int) dr.getRight() - 30, (int) (cy - h) - 11, 26, 11, juce::Justification::centredRight);
+    }
+    g.setColour (juce::Colours::white.withAlpha (0.18f));
+    g.drawHorizontalLine ((int) cy, dr.getX() + 4, dr.getRight() - 4);
+
+    const auto& sc = proc.engine.dsScope();
+    constexpr int N = DsScope::N;
+    const int pos = sc.pos.load (std::memory_order_acquire);
+    const float bw = (dr.getWidth() - 8.f) / (float) N;
+    auto hOf = [hh] (float lin) { return hh * std::sqrt (juce::jlimit (0.f, 1.f, lin)); };   // echelle ~racine : les passages faibles restent lisibles
+    juce::Path top, bot;
+    bool started = false;
+    for (int k = 0; k < N; ++k)
+    {
+        const int i = (pos + k) % N;
+        const float x = dr.getX() + 4.f + (float) k * bw;
+        const float h = hOf (sc.in[(size_t) i].load (std::memory_order_relaxed));
+        if (! started) { top.startNewSubPath (x, cy - h); bot.startNewSubPath (x, cy + h); started = true; }
+        else { top.lineTo (x, cy - h); bot.lineTo (x, cy + h); }
+    }
+    juce::Path fill = top;
+    {
+        juce::Path rev = bot;
+        juce::PathFlatteningIterator it (rev);
+        std::vector<juce::Point<float>> pts;
+        while (it.next()) { if (pts.empty()) pts.push_back ({ it.x1, it.y1 }); pts.push_back ({ it.x2, it.y2 }); }
+        for (auto q = pts.rbegin(); q != pts.rend(); ++q) fill.lineTo (*q);
+        fill.closeSubPath();
+    }
+    g.setColour (juce::Colour (0xffd9d3c8).withAlpha (0.88f));
+    g.fillPath (fill);
+    // sibilances : partie retiree en jaune, partie conservee en vert
+    for (int k = 0; k < N; ++k)
+    {
+        const int i = (pos + k) % N;
+        const float gr = sc.gr[(size_t) i].load (std::memory_order_relaxed);
+        if (gr > -0.25f) continue;
+        const float in = sc.in[(size_t) i].load (std::memory_order_relaxed);
+        const float x = dr.getX() + 4.f + (float) k * bw;
+        const float hIn = hOf (in), hOut = hOf (in * (float) dbToLin (gr));
+        g.setColour (dsYellow.withAlpha (0.95f));
+        g.fillRect (x, cy - hIn, bw + 0.5f, hIn - hOut);
+        g.fillRect (x, cy + hOut, bw + 0.5f, hIn - hOut);
+        g.setColour (dsGreen.withAlpha (0.9f));
+        g.fillRect (x, cy - hOut, bw + 0.5f, hOut * 0.5f);
+        g.fillRect (x, cy + hOut * 0.5f, bw + 0.5f, hOut * 0.5f);
+    }
+    g.restoreState();
+    // curseur de lecture
+    g.setColour (juce::Colours::white.withAlpha (0.38f));
+    g.setFont (plain (11.f));
+    g.drawText ("INPUT  -  jaune = sibilance reduite   vert = conserve", display.reduced (10, 5), juce::Justification::bottomLeft);
+    // valeurs des boutons
+    g.setColour (dsYellow);
+    g.setFont (bold (14.f));
+    g.drawText (juce::String (-0.6 * (double) proc.getParam (deessAmt), 0) + " dB", valThr, juce::Justification::centred);
+    g.drawText (juce::String ((double) proc.getParam (deessRange), 1) + " dB", valRng, juce::Justification::centred);
+
+    // ---- vu-metre de reduction ----
+    const auto mr = meterArea.toFloat();
+    g.setColour (juce::Colour (0xff0a0807)); g.fillRoundedRectangle (mr, 4.f);
+    g.setColour (col::edge.brighter (0.5f)); g.drawRoundedRectangle (mr, 4.f, 1.f);
+    const float grNow = -proc.engine.dsGrNow();
+    grSmooth = grNow > grSmooth ? grNow : grSmooth + (grNow - grSmooth) * 0.2f;
+    const float f = juce::jlimit (0.f, 1.f, grSmooth / 24.f);
+    auto fillR = mr.reduced (5.f, 22.f);
+    g.setColour (juce::Colour (0xff1c1712)); g.fillRect (fillR);
+    g.setGradientFill (juce::ColourGradient (dsYellow, 0, fillR.getY(), juce::Colour (0xffd98a00), 0, fillR.getBottom(), false));
+    g.fillRect (fillR.withHeight (fillR.getHeight() * f));
+    g.setColour (col::textDim);
+    g.setFont (bold (10.f));
+    g.drawText ("GR", mr.toNearestInt().removeFromTop (20), juce::Justification::centred);
+    g.setColour (dsYellow);
+    g.drawText (juce::String (-grSmooth, 1), mr.toNearestInt().removeFromBottom (20), juce::Justification::centred);
+}
+
 //==============================================================================
 YazaVoxEditor::YazaVoxEditor (YazaVoxProcessor& p)
     : AudioProcessorEditor (&p), proc (p), inKnob (p, inGain), outKnob (p, outGain), limKnob (p, limCeil), eqView (p), noteDisp (p),
@@ -1094,6 +1399,11 @@ YazaVoxEditor::YazaVoxEditor (YazaVoxProcessor& p)
 
     simple = std::make_unique<SimpleView> (proc, [this] { proc.uiSimple = false; applyMode(); });
     addAndMakeVisible (*simple);
+    ds = std::make_unique<DsPanel> (proc, [this] { ds->setVisible (false); });
+    addChildComponent (*ds);
+    simple->onDs = [this] { openDs(); };
+    dsOpenBtn.onClick = [this] { openDs(); };
+    fx.headerExtra = &dsOpenBtn; fx.addAndMakeVisible (dsOpenBtn);
     applyMode();
 
     setResizable (true, true);
@@ -1107,6 +1417,13 @@ YazaVoxEditor::~YazaVoxEditor()
 {
     stopTimer();
     setLookAndFeel (nullptr);
+}
+
+void YazaVoxEditor::openDs()
+{
+    ds->setBounds (getLocalBounds());
+    ds->setVisible (true);
+    ds->toFront (false);
 }
 
 void YazaVoxEditor::applyMode()
@@ -1171,6 +1488,7 @@ void YazaVoxEditor::paint (juce::Graphics& g)
 void YazaVoxEditor::resized()
 {
     simple->setBounds (getLocalBounds());
+    if (ds) ds->setBounds (getLocalBounds());
     auto r = getLocalBounds();
     const int W = r.getWidth(), H = r.getHeight();
     const int hh = std::clamp ((int) (H * 0.135f), 82, 120);

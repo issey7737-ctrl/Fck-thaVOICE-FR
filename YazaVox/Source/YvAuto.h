@@ -435,7 +435,7 @@ inline AutoResult computeAutoSettings (const VoiceAnalyzer& an, bool tuneOn)
     st.push_back ({ "compAtk", 10.f }); st.push_back ({ "compRel", (float) rel }); st.push_back ({ "compMakeup", (float) makeup });
     st.push_back ({ "comp2On", 1.f }); st.push_back ({ "comp2Amt", 40.f }); st.push_back ({ "compWarm", (float) warm });
     st.push_back ({ "fxOn", 1.f });
-    st.push_back ({ "deessOn", 1.f }); st.push_back ({ "deessAmt", (float) deAmt }); st.push_back ({ "deessFreq", (float) deFreq }); st.push_back ({ "deessRange", 12.f });
+    st.push_back ({ "deessOn", 1.f }); st.push_back ({ "deessAmt", (float) deAmt }); st.push_back ({ "deessFreq", (float) (deFreq * 0.78) }); st.push_back ({ "deessHigh", (float) std::min (deFreq * 1.55, 16000.0) }); st.push_back ({ "deessRange", 12.f });
     st.push_back ({ "airOn", 1.f }); st.push_back ({ "airMid", 35.f }); st.push_back ({ "airHigh", (float) airHigh });
     st.push_back ({ "satOn", 1.f }); st.push_back ({ "satDrive", 18.f });
     st.push_back ({ "dlyOn", 1.f }); st.push_back ({ "dlyMix", (float) dlyMix }); st.push_back ({ "dlyNote", 1.f }); st.push_back ({ "dlyFb", 28.f }); st.push_back ({ "dlyHP", 300.f });

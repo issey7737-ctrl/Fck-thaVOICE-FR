@@ -45,7 +45,7 @@ public:
     double getSampleRate_() const noexcept { return sr; }
     float getParam (int idx) const { return raw[(size_t) idx]->load(); }
 
-    // AUTO VOIX : ecoute ~10 s (voix + prod si le sidechain est branche) puis regle le mix, et la tonalite si l'autotune est active
+    // AUTO VOIX : ecoute ~10 s (la voix de CETTE piste uniquement) puis regle le mix, et la tonalite si l'autotune est active
     void startAutoMix();
     void cancelAutoMix();
     int  getAutoState() const noexcept { return analyzer.state(); }     // 0 repos, 1 ecoute, 2 calcul, 3 pas assez de voix
