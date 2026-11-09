@@ -111,7 +111,10 @@ public:
     void mouseUp (const juce::MouseEvent&) override;
     void mouseDoubleClick (const juce::MouseEvent&) override;
     void mouseWheelMove (const juce::MouseEvent&, const juce::MouseWheelDetails&) override;
+    void mouseMove (const juce::MouseEvent&) override;
+    void mouseExit (const juce::MouseEvent&) override { hoverBand = -1; repaint(); }
 private:
+    juce::Point<float> nodePos (int i) const;
     static constexpr int kOrder = 12, kN = 1 << kOrder;
     struct BandIdx { int f, g, q; };
     float xOf (double f) const;
@@ -127,8 +130,8 @@ private:
     std::array<float, 2 * kN> work {};
     std::array<float, kN / 2> spec {};
     int wpos = 0;
-    int dragBand = -1;
-    std::array<BandIdx, 4> bands;
+    int dragBand = -1, hoverBand = -1;
+    std::array<BandIdx, 6> bands;
 };
 
 class ModulePanel : public juce::Component

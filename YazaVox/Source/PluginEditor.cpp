@@ -317,7 +317,7 @@ void NoteDisplay::paint (juce::Graphics& g)
 //==============================================================================
 EqView::EqView (YazaVoxProcessor& p) : proc (p)
 {
-    bands = { BandIdx { lsF, lsG, lsQ }, BandIdx { lmF, lmG, lmQ }, BandIdx { hmF, hmG, hmQ }, BandIdx { hsF, hsG, hsQ } };
+    bands = { BandIdx { hpFreq, -1, -1 }, BandIdx { lsF, lsG, lsQ }, BandIdx { lmF, lmG, lmQ }, BandIdx { hmF, hmG, hmQ }, BandIdx { hsF, hsG, hsQ }, BandIdx { lpFreq, -1, -1 } };   // 6 noeuds, comme un Fruity EQ
     spec.fill (-120.f);
 }
 
@@ -358,32 +358,58 @@ void EqView::update()
     repaint();
 }
 
+static const juce::Colour eqNodeCol[6] = { juce::Colour (0xffa17be8), juce::Colour (0xffe76fb0), juce::Colour (0xffee8d4c), juce::Colour (0xffe9d54e), juce::Colour (0xff62cf72), juce::Colour (0xff5fa3ea) };
+
+juce::Point<float> EqView::nodePos (int i) const
+{
+    const auto& b = bands[(size_t) i];
+    const float m = std::clamp ((float) getHeight() * 0.09f, 7.f, 12.f);
+    const float x = std::clamp (xOf (proc.getParam (b.f)), m, (float) getWidth() - m);
+    const float y = b.g < 0 ? yOfDb (0.0) : yOfDb (juce::jlimit (-18.0, 18.0, (double) proc.getParam (b.g)));
+    return { x, y };
+}
+
 void EqView::paint (juce::Graphics& g)
 {
     const auto r = getLocalBounds().toFloat();
-    g.setGradientFill (juce::ColourGradient (juce::Colour (0xff130b0c), 0, 0, juce::Colour (0xff070505), 0, r.getBottom(), false));
-    g.fillRoundedRectangle (r, 6.f);
+    const float cy = yOfDb (0.0);
+    // fond facon Fruity EQ 2 : teinte bleu-ardoise, moitie haute plus sombre, moitie basse plus claire
+    g.setGradientFill (juce::ColourGradient (juce::Colour (0xff142027), 0, 0, juce::Colour (0xff1c2d36), 0, cy, false));
+    g.fillRoundedRectangle (r, 7.f);
+    g.saveState();
+    juce::Path clip; clip.addRoundedRectangle (r, 7.f);
+    g.reduceClipRegion (clip);
+    g.setGradientFill (juce::ColourGradient (juce::Colour (0xff2a3d48), 0, cy, juce::Colour (0xff22323c), 0, r.getBottom(), false));
+    g.fillRect (r.withTrimmedTop (cy));
 
-    // grille
+    // grille fine (decades + subdivisions) et reperes
     g.setFont (plain (std::clamp (r.getHeight() * 0.075f, 8.f, 11.f)));
-    for (double f : { 50.0, 100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0 })
+    for (double dec : { 10.0, 100.0, 1000.0 })
+        for (int k = 1; k < 10; ++k)
+        {
+            const double f = dec * k;
+            if (f < 20.0 || f > 20000.0) continue;
+            const float x = xOf (f);
+            const bool major = (k == 1 || k == 2 || k == 5);
+            g.setColour (juce::Colour (0xff5d7f90).withAlpha (major ? 0.20f : 0.09f));
+            g.drawVerticalLine ((int) x, 0.f, r.getBottom());
+            if (major && f >= 50.0)
+            {
+                g.setColour (juce::Colour (0xff9db6c2).withAlpha (0.65f));
+                g.drawText (f >= 1000 ? juce::String (f / 1000.0, 0) + "k" : juce::String ((int) f), (int) x + 2, (int) r.getBottom() - 13, 30, 12, juce::Justification::left);
+            }
+        }
+    for (int db : { -12, -6, 6, 12 })
     {
-        const float x = xOf (f);
-        g.setColour (juce::Colour (0xff241517));
-        g.drawVerticalLine ((int) x, 0.f, r.getBottom());
-        g.setColour (col::textDim.withAlpha (0.7f));
-        g.drawText (f >= 1000 ? juce::String (f / 1000.0, f >= 10000 ? 0 : (f == 1000.0 || f == 2000.0 || f == 5000.0 ? 0 : 1)) + "k" : juce::String ((int) f),
-                    (int) x + 2, (int) r.getBottom() - 13, 30, 12, juce::Justification::left);
-    }
-    for (int db : { -12, -6, 0, 6, 12 })
-    {
-        g.setColour (db == 0 ? juce::Colour (0xff3a1a1e) : juce::Colour (0xff1c1112));
+        g.setColour (juce::Colour (0xff5d7f90).withAlpha (0.12f));
         g.drawHorizontalLine ((int) yOfDb (db), 0.f, r.getRight());
+        g.setColour (juce::Colour (0xff9db6c2).withAlpha (0.5f));
+        g.drawText (juce::String (db > 0 ? "+" : "") + juce::String (db), (int) r.getRight() - 26, (int) yOfDb (db) - 11, 24, 11, juce::Justification::right);
     }
 
-    // spectre (reference : 0 dBFS en haut, -90 en bas)
+    // spectre en temps reel (ref : 0 dBFS en haut, -90 en bas), remplissage doux
     const double sr = proc.getSampleRate_();
-    juce::Path sp;
+    juce::Path sp, spLine;
     const int W = getWidth();
     bool started = false;
     for (int px = 0; px < W; px += 2)
@@ -393,57 +419,88 @@ void EqView::paint (juce::Graphics& g)
         float m = -120.f;
         for (int b = b0; b < b1; ++b) m = std::max (m, spec[(size_t) b]);
         const float y = r.getHeight() * (1.f - juce::jlimit (0.f, 1.f, (m + 90.f) / 90.f));
-        if (! started) { sp.startNewSubPath (0.f, r.getBottom()); sp.lineTo ((float) px, y); started = true; }
-        else sp.lineTo ((float) px, y);
+        if (! started) { sp.startNewSubPath (0.f, r.getBottom()); sp.lineTo ((float) px, y); spLine.startNewSubPath ((float) px, y); started = true; }
+        else { sp.lineTo ((float) px, y); spLine.lineTo ((float) px, y); }
     }
     if (started)
     {
         sp.lineTo ((float) W, r.getBottom()); sp.closeSubPath();
-        g.setGradientFill (juce::ColourGradient (col::red.withAlpha (0.55f), 0, 0, col::redDark.withAlpha (0.05f), 0, r.getBottom(), false));
+        g.setGradientFill (juce::ColourGradient (juce::Colour (0xffcfe3ec).withAlpha (0.42f), 0, 0, juce::Colour (0xff8fb0c0).withAlpha (0.10f), 0, r.getBottom(), false));
         g.fillPath (sp);
+        g.setColour (juce::Colour (0xffdcecf3).withAlpha (0.55f));
+        g.strokePath (spLine, juce::PathStrokeType (1.1f, juce::PathStrokeType::curved));
     }
+
+    // ligne 0 dB
+    g.setColour (juce::Colours::white.withAlpha (0.55f));
+    g.drawHorizontalLine ((int) cy, 0.f, r.getRight());
 
     // courbe de reponse
     float v[Count];
     for (int i = 0; i < Count; ++i) v[i] = proc.getParam (i);
     const bool eqActive = v[eqOn] > 0.5f;
-    juce::Path curve;
+    juce::Path curve, area;
     for (int px = 0; px <= W; px += 2)
     {
         const double db = EQ::responseDb (v, sr, fOf ((float) px));
         const float y = yOfDb (juce::jlimit (-18.0, 18.0, db));
-        if (px == 0) curve.startNewSubPath (0.f, y); else curve.lineTo ((float) px, y);
+        if (px == 0) { curve.startNewSubPath (0.f, y); area.startNewSubPath (0.f, cy); area.lineTo (0.f, y); }
+        else { curve.lineTo ((float) px, y); area.lineTo ((float) px, y); }
     }
-    g.setColour (col::redBright.withAlpha (eqActive ? 0.35f : 0.12f));
+    area.lineTo ((float) W, cy); area.closeSubPath();
+    g.setColour (juce::Colours::white.withAlpha (eqActive ? 0.13f : 0.05f));
+    g.fillPath (area);
+    g.setColour (juce::Colours::white.withAlpha (eqActive ? 0.22f : 0.08f));
     g.strokePath (curve, juce::PathStrokeType (5.f));
-    g.setColour (eqActive ? juce::Colours::white : col::textDim);
-    g.strokePath (curve, juce::PathStrokeType (1.8f));
+    g.setColour (eqActive ? juce::Colours::white : juce::Colour (0xff8fa3ad));
+    g.strokePath (curve, juce::PathStrokeType (1.7f));
 
-    // poignees
-    for (size_t i = 0; i < bands.size(); ++i)
+    // noeuds numerotes
+    const float rad = std::clamp (r.getHeight() * 0.075f, 6.f, 11.f);
+    for (int i = 0; i < 6; ++i)
     {
-        const auto& b = bands[i];
-        const juce::Point<float> c (xOf (v[b.f]), yOfDb (juce::jlimit (-18.0, 18.0, (double) v[b.g])));
-        const bool on = std::abs (v[b.g]) > 0.01f;
-        g.setColour (col::red.withAlpha (on ? 0.3f : 0.12f));
-        g.fillEllipse (c.x - 11.f, c.y - 11.f, 22.f, 22.f);
-        g.setColour (on || dragBand == (int) i ? col::redBright : col::redDark);
-        g.fillEllipse (c.x - 5.f, c.y - 5.f, 10.f, 10.f);
-        g.setColour (juce::Colours::white.withAlpha (0.9f));
-        g.drawEllipse (c.x - 5.f, c.y - 5.f, 10.f, 10.f, 1.2f);
+        const auto& b = bands[(size_t) i];
+        const auto c = nodePos (i);
+        const bool act = b.g < 0 ? (i == 0 ? v[hpFreq] > 21.f : v[lpFreq] < 19900.f) : std::abs (v[b.g]) > 0.01f;
+        const bool hot = dragBand == i || hoverBand == i;
+        const auto col_ = eqNodeCol[i];
+        if (act || hot) { g.setColour (col_.withAlpha (hot ? 0.38f : 0.22f)); g.fillEllipse (c.x - rad * 1.7f, c.y - rad * 1.7f, rad * 3.4f, rad * 3.4f); }
+        g.setGradientFill (juce::ColourGradient (col_.darker (0.25f).withAlpha (0.85f), c.x, c.y - rad, col_.darker (0.75f), c.x, c.y + rad, false));
+        g.fillEllipse (c.x - rad, c.y - rad, rad * 2.f, rad * 2.f);
+        g.setColour (col_.withAlpha (act || hot ? 1.f : 0.65f));
+        g.drawEllipse (c.x - rad, c.y - rad, rad * 2.f, rad * 2.f, hot ? 2.2f : 1.6f);
+        g.setFont (bold (rad * 1.05f));
+        g.setColour (juce::Colours::white.withAlpha (act || hot ? 1.f : 0.75f));
+        g.drawText (juce::String (i + 1), (int) (c.x - rad), (int) (c.y - rad), (int) (rad * 2.f), (int) (rad * 2.f), juce::Justification::centred);
     }
-    g.setColour (col::edge);
-    g.drawRoundedRectangle (r.reduced (0.5f), 6.f, 1.f);
+    // infobulle du noeud survole / glisse
+    const int hb = dragBand >= 0 ? dragBand : hoverBand;
+    if (hb >= 0)
+    {
+        const auto& b = bands[(size_t) hb];
+        const auto c = nodePos (hb);
+        const double f = proc.getParam (b.f);
+        juce::String t = (f >= 1000.0 ? juce::String (f / 1000.0, 2) + " kHz" : juce::String ((int) f) + " Hz");
+        if (b.g >= 0) t << "   " << (proc.getParam (b.g) > 0 ? "+" : "") << juce::String (proc.getParam (b.g), 1) << " dB   Q " << juce::String (proc.getParam (b.q), 2);
+        g.setFont (bold (std::clamp (r.getHeight() * 0.085f, 9.f, 12.f)));
+        const float tw = g.getCurrentFont().getStringWidthFloat (t) + 12.f, th = g.getCurrentFont().getHeight() + 6.f;
+        juce::Rectangle<float> tb (std::clamp (c.x - tw / 2, 3.f, r.getRight() - tw - 3.f), c.y < r.getHeight() * 0.4f ? c.y + rad * 1.5f : c.y - rad * 1.5f - th, tw, th);
+        g.setColour (juce::Colour (0xff0d171c).withAlpha (0.88f)); g.fillRoundedRectangle (tb, 4.f);
+        g.setColour (eqNodeCol[hb]); g.drawRoundedRectangle (tb, 4.f, 1.f);
+        g.setColour (juce::Colours::white); g.drawText (t, tb.toNearestInt(), juce::Justification::centred);
+    }
+    g.restoreState();
+    g.setColour (juce::Colour (0xff3d5766));
+    g.drawRoundedRectangle (r.reduced (0.5f), 7.f, 1.2f);
 }
 
 int EqView::hit (juce::Point<float> p) const
 {
-    int best = -1; float bd = 18.f;
-    for (size_t i = 0; i < bands.size(); ++i)
+    int best = -1; float bd = std::max (16.f, (float) getHeight() * 0.12f);
+    for (int i = 0; i < 6; ++i)
     {
-        const juce::Point<float> c (xOf (proc.getParam (bands[i].f)), yOfDb (juce::jlimit (-18.0, 18.0, (double) proc.getParam (bands[i].g))));
-        const float d = c.getDistanceFrom (p);
-        if (d < bd) { bd = d; best = (int) i; }
+        const float d = nodePos (i).getDistanceFrom (p);
+        if (d < bd) { bd = d; best = i; }
     }
     return best;
 }
@@ -454,43 +511,57 @@ void EqView::setNorm (int idx, float real, bool)
         p->setValueNotifyingHost (p->convertTo0to1 (real));
 }
 
+void EqView::mouseMove (const juce::MouseEvent& e)
+{
+    const int h = hit (e.position);
+    if (h != hoverBand) { hoverBand = h; repaint(); }
+}
 void EqView::mouseDown (const juce::MouseEvent& e)
 {
     dragBand = hit (e.position);
     if (dragBand >= 0)
     {
-        proc.apvts.getParameter (kDefs[bands[(size_t) dragBand].f].id)->beginChangeGesture();
-        proc.apvts.getParameter (kDefs[bands[(size_t) dragBand].g].id)->beginChangeGesture();
+        const auto& b = bands[(size_t) dragBand];
+        proc.apvts.getParameter (kDefs[b.f].id)->beginChangeGesture();
+        if (b.g >= 0) proc.apvts.getParameter (kDefs[b.g].id)->beginChangeGesture();
     }
 }
 void EqView::mouseDrag (const juce::MouseEvent& e)
 {
     if (dragBand < 0) return;
     const auto& b = bands[(size_t) dragBand];
-    const auto& df = kDefs[b.f]; const auto& dg = kDefs[b.g];
+    const auto& df = kDefs[b.f];
     const float f = juce::jlimit (df.lo, df.hi, (float) fOf (e.position.x));
-    const float db = juce::jlimit (dg.lo, dg.hi, (0.5f - e.position.y / (float) getHeight()) * 36.f);
     setNorm (b.f, f, false);
-    setNorm (b.g, std::round (db * 10.f) / 10.f, false);
+    if (b.g >= 0)
+    {
+        const auto& dg = kDefs[b.g];
+        const float db = juce::jlimit (dg.lo, dg.hi, (0.5f - e.position.y / (float) getHeight()) * 36.f);
+        setNorm (b.g, std::round (db * 10.f) / 10.f, false);
+    }
 }
 void EqView::mouseUp (const juce::MouseEvent&)
 {
     if (dragBand >= 0)
     {
-        proc.apvts.getParameter (kDefs[bands[(size_t) dragBand].f].id)->endChangeGesture();
-        proc.apvts.getParameter (kDefs[bands[(size_t) dragBand].g].id)->endChangeGesture();
+        const auto& b = bands[(size_t) dragBand];
+        proc.apvts.getParameter (kDefs[b.f].id)->endChangeGesture();
+        if (b.g >= 0) proc.apvts.getParameter (kDefs[b.g].id)->endChangeGesture();
     }
     dragBand = -1;
 }
 void EqView::mouseDoubleClick (const juce::MouseEvent& e)
 {
     const int h = hit (e.position);
-    if (h >= 0) setNorm (bands[(size_t) h].g, 0.f, false);
+    if (h < 0) return;
+    const auto& b = bands[(size_t) h];
+    if (b.g >= 0) setNorm (b.g, 0.f, false);
+    else setNorm (b.f, kDefs[b.f].def, false);
 }
 void EqView::mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDetails& w)
 {
     const int h = hit (e.position);
-    if (h < 0) return;
+    if (h < 0 || bands[(size_t) h].q < 0) return;
     const auto& q = kDefs[bands[(size_t) h].q];
     const float nq = juce::jlimit (q.lo, q.hi, proc.getParam (bands[(size_t) h].q) * (1.f + w.deltaY * 0.5f));
     if (auto* p = proc.apvts.getParameter (q.id)) { p->beginChangeGesture(); p->setValueNotifyingHost (p->convertTo0to1 (nq)); p->endChangeGesture(); }
@@ -1347,7 +1418,7 @@ YazaVoxEditor::YazaVoxEditor (YazaVoxProcessor& p)
     comp.headerExtra = &grMeter; comp.addAndMakeVisible (grMeter);
     dsMini = std::make_unique<DsMini> (proc);
     fx.extraLeft = dsMini.get(); fx.addAndMakeVisible (*dsMini); fx.extraLeftFrac = 0.43f;
-    eq.extraTop = &eqView; eq.addAndMakeVisible (eqView); eq.extraFrac = 0.42f;
+    eq.extraTop = &eqView; eq.addAndMakeVisible (eqView); eq.extraFrac = 0.46f;
     tune.headerExtra = &noteDisp; tune.addAndMakeVisible (noteDisp);
     for (auto* m : { &comp, &eq, &fx, &dly, &rev, &tune }) addAndMakeVisible (*m);
 
