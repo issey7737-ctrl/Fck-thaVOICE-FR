@@ -376,12 +376,12 @@ inline AutoResult computeAutoSettings (const VoiceAnalyzer& an, bool tuneOn)
     R.f0 = mp.empty() ? 0.0 : 440.0 * std::pow (2.0, (percentile (mp, 0.5) - 69.0) / 12.0);
 
     // --- EQ : le "muddy" est traite en priorite (bas-mediums + boite 500-800 + proximite), avec la prod en plus
-    const double hp = (R.f0 > 0 && R.f0 > 220.0 ? 110.0 : (R.f0 > 0 && R.f0 < 150.0 ? 80.0 : 90.0)) + (devLow > 5.0 ? 20.0 : 0.0);
+    const double hp = (R.f0 > 0 && R.f0 > 220.0 ? 115.0 : (R.f0 > 0 && R.f0 < 150.0 ? 90.0 : 100.0)) + (devLow > 5.0 ? 20.0 : 0.0);   // low cut ~100 Hz comme ta chaine
     double mudCut = 0.0;
     if (devMud > 0.5) mudCut = 0.85 * devMud;
     if (devBox > 1.5) mudCut = std::max (mudCut, 0.7 * devBox);
     if (hasProd) mudCut += std::clamp (0.35 * (mudMask + 8.0), 0.0, 4.0);   // la prod occupe aussi cette zone (a moins de 8 dB sous la voix) : le flou s'additionne, on creuse davantage
-    mudCut = std::clamp (mudCut, 0.0, 7.0);
+    mudCut = std::clamp (std::max (mudCut, 2.5), 0.0, 7.0);               // toujours un creux dans les bas-mediums (ta chaine : -3,5 dB vers 400 Hz)
     R.mudCut = mudCut; R.mudMask = mudMask;
     int kLm = kMud; if (devBox > devMud + 2.0) kLm = kBox;
     const double lmF = std::clamp (an.bandCentre (kLm), 200.0, 650.0);
@@ -391,7 +391,7 @@ inline AutoResult computeAutoSettings (const VoiceAnalyzer& an, bool tuneOn)
     double hmG, hmF = 3200.0;
     if (devPres < -2.0) hmG = std::clamp (-0.7 * devPres, 0.0, 5.0);
     else if (devPres > 4.0) { hmG = -std::clamp (0.5 * (devPres - 4.0), 0.0, 4.0); hmF = std::clamp (an.bandCentre (kHarsh), 2500.0, 5000.0); }
-    else hmG = 1.5;
+    else hmG = 2.5;
     if (hasProd)
     {
         R.presBoost = std::clamp (0.8 * (presMask + 2.0), 0.0, 5.0);
@@ -400,7 +400,7 @@ inline AutoResult computeAutoSettings (const VoiceAnalyzer& an, bool tuneOn)
     hmG = std::clamp (hmG, -5.0, 6.0);
     double hsG = std::clamp (-0.6 * devAir + 1.5, -3.0, 6.0);
     if (hasProd && airMask > 2.0) hsG -= 1.0;
-    const double airHigh = std::clamp (55.0 - 3.0 * devAir - (hasProd && airMask > 2.0 ? 8.0 : 0.0), 15.0, 85.0);
+    const double airHigh = std::clamp (22.0 - 2.0 * devAir - (hasProd && airMask > 2.0 ? 6.0 : 0.0), 8.0, 60.0);
 
     // --- de-esser
     double sibSum = 0, centSum = 0; int ns = 0;
@@ -418,16 +418,16 @@ inline AutoResult computeAutoSettings (const VoiceAnalyzer& an, bool tuneOn)
     }
 
     // --- chaleur, delay, reverb
-    const double warm = (devLow < -3.0 || devMud < -3.0) ? 40.0 : 30.0;      // voix fine : un peu plus de chaleur
+    const double warm = (devLow < -3.0 || devMud < -3.0) ? 42.0 : 35.0;      // voix fine : un peu plus de chaleur
     const double dense = voicedFrac >= 0.75 ? 1.0 : 0.0;
     const double bonus = tuneOn ? 3.0 : 0.0;
-    const double revMix = (dense > 0.5 ? 8.0 : 13.0) + bonus, dlyMix = (dense > 0.5 ? 6.0 : 12.0) + bonus;
+    const double revMix = (dense > 0.5 ? 4.0 : 7.0) + (tuneOn ? 5.0 : 0.0), dlyMix = (dense > 0.5 ? 6.0 : 10.0) + bonus;   // reverb discrete (voix non chantee : presque absente)
 
     auto& st = R.set;
     st.push_back ({ "inGain", (float) inG });
     if (hasProd) st.push_back ({ "outGain", (float) outG });
     st.push_back ({ "eqOn", 1.f }); st.push_back ({ "hpOn", 1.f }); st.push_back ({ "hpFreq", (float) hp });
-    st.push_back ({ "lmF", (float) lmF }); st.push_back ({ "lmG", (float) lmG }); st.push_back ({ "lmQ", 1.0f });
+    st.push_back ({ "lmF", (float) lmF }); st.push_back ({ "lmG", (float) lmG }); st.push_back ({ "lmQ", 1.4f });
     st.push_back ({ "lsF", 150.f }); st.push_back ({ "lsG", (float) lsG });
     st.push_back ({ "hmF", (float) hmF }); st.push_back ({ "hmG", (float) hmG });
     st.push_back ({ "hsF", 10500.f }); st.push_back ({ "hsG", (float) hsG });
@@ -436,11 +436,12 @@ inline AutoResult computeAutoSettings (const VoiceAnalyzer& an, bool tuneOn)
     st.push_back ({ "comp2On", 1.f }); st.push_back ({ "comp2Amt", 40.f }); st.push_back ({ "compWarm", (float) warm });
     st.push_back ({ "fxOn", 1.f });
     st.push_back ({ "deessOn", 1.f }); st.push_back ({ "deessAmt", (float) deAmt }); st.push_back ({ "deessFreq", (float) (deFreq * 0.78) }); st.push_back ({ "deessHigh", (float) std::min (deFreq * 1.55, 16000.0) }); st.push_back ({ "deessRange", 12.f });
-    st.push_back ({ "airOn", 1.f }); st.push_back ({ "airMid", 35.f }); st.push_back ({ "airHigh", (float) airHigh });
-    st.push_back ({ "satOn", 1.f }); st.push_back ({ "satDrive", 18.f });
+    st.push_back ({ "airOn", 1.f }); st.push_back ({ "airMid", 26.f }); st.push_back ({ "airHigh", (float) airHigh });
+    st.push_back ({ "satOn", 1.f }); st.push_back ({ "satDrive", 22.f }); st.push_back ({ "satTone", 8.f }); st.push_back ({ "satMix", 70.f });
+    st.push_back ({ "widthOn", 1.f }); st.push_back ({ "width", 118.f });
     st.push_back ({ "dlyOn", 1.f }); st.push_back ({ "dlyMix", (float) dlyMix }); st.push_back ({ "dlyNote", 1.f }); st.push_back ({ "dlyFb", 28.f }); st.push_back ({ "dlyHP", 300.f });
-    st.push_back ({ "dlyDuck", hasProd ? 70.f : 60.f });
-    st.push_back ({ "revOn", 1.f }); st.push_back ({ "revMix", (float) revMix }); st.push_back ({ "revMode", 1.f }); st.push_back ({ "revDecay", 1.4f }); st.push_back ({ "revLow", 300.f });
+    st.push_back ({ "dlyDuck", 75.f }); st.push_back ({ "dlyLP", 6000.f });
+    st.push_back ({ "revOn", 1.f }); st.push_back ({ "revMix", (float) revMix }); st.push_back ({ "revMode", 2.f }); st.push_back ({ "revDecay", 0.7f }); st.push_back ({ "revPre", 20.f }); st.push_back ({ "revDamp", 65.f }); st.push_back ({ "revHigh", 8000.f }); st.push_back ({ "revLow", 220.f });
     st.push_back ({ "revDuck", hasProd ? 50.f : 30.f });
 
     R.ok = true;
