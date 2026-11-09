@@ -376,12 +376,12 @@ inline AutoResult computeAutoSettings (const VoiceAnalyzer& an, bool tuneOn)
     R.f0 = mp.empty() ? 0.0 : 440.0 * std::pow (2.0, (percentile (mp, 0.5) - 69.0) / 12.0);
 
     // --- EQ : le "muddy" est traite en priorite (bas-mediums + boite 500-800 + proximite), avec la prod en plus
-    const double hp = (R.f0 > 0 && R.f0 > 220.0 ? 115.0 : (R.f0 > 0 && R.f0 < 150.0 ? 90.0 : 100.0)) + (devLow > 5.0 ? 20.0 : 0.0);   // low cut ~100 Hz comme ta chaine
+    const double hp = (R.f0 > 0 && R.f0 > 220.0 ? 115.0 : (R.f0 > 0 && R.f0 < 150.0 ? 90.0 : 100.0)) + (devLow > 5.0 ? 20.0 : 0.0);   // low cut ~100 Hz
     double mudCut = 0.0;
     if (devMud > 0.5) mudCut = 0.85 * devMud;
     if (devBox > 1.5) mudCut = std::max (mudCut, 0.7 * devBox);
     if (hasProd) mudCut += std::clamp (0.35 * (mudMask + 8.0), 0.0, 4.0);   // la prod occupe aussi cette zone (a moins de 8 dB sous la voix) : le flou s'additionne, on creuse davantage
-    mudCut = std::clamp (std::max (mudCut, 2.5), 0.0, 7.0);               // toujours un creux dans les bas-mediums (ta chaine : -3,5 dB vers 400 Hz)
+    mudCut = std::clamp (std::max (mudCut, 2.5), 0.0, 7.0);               // toujours un creux dans les bas-mediums
     R.mudCut = mudCut; R.mudMask = mudMask;
     int kLm = kMud; if (devBox > devMud + 2.0) kLm = kBox;
     const double lmF = std::clamp (an.bandCentre (kLm), 200.0, 650.0);
