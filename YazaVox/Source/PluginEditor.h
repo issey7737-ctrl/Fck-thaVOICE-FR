@@ -134,13 +134,15 @@ private:
 class ModulePanel : public juce::Component
 {
 public:
-    ModulePanel (YazaVoxProcessor&, int module, int rowCells);
+    ModulePanel (YazaVoxProcessor&, int module, int rowCells, const char* skipGroup = nullptr);
     void paint (juce::Graphics&) override;
     void resized() override;
     void refresh();
 
     juce::Component* extraTop = nullptr;
     float extraFrac = 0.f;
+    juce::Component* extraLeft = nullptr;      // bloc a gauche (ex. DE-ESSER), pleine hauteur
+    float extraLeftFrac = 0.f;
     juce::Component* headerExtra = nullptr;
 
 private:
@@ -227,27 +229,25 @@ private:
     YazaVoxProcessor& proc;
 };
 
-class DsPanel : public juce::Component, private juce::Timer
+
+// Bloc DE-ESSER integre au panneau FX : ecran forme d'onde (sibilances visibles + correction en temps reel), THRESHOLD / RANGE, vu-metres, bande de frequences
+class DsMini : public juce::Component, private juce::Timer
 {
 public:
-    DsPanel (YazaVoxProcessor&, std::function<void()> onBack);
-    ~DsPanel() override { stopTimer(); setLookAndFeel (nullptr); }
+    explicit DsMini (YazaVoxProcessor&);
+    ~DsMini() override { stopTimer(); }
     void paint (juce::Graphics&) override;
     void resized() override;
-    void visibilityChanged() override { if (isVisible()) startTimerHz (30); else stopTimer(); }
 private:
-    void timerCallback() override { repaint (display); }
+    void timerCallback() override { if (isShowing()) repaint (screen.getUnion (meters)); }
     YazaVoxProcessor& proc;
-    AmberLAF laf;
-    std::function<void()> onBack;
-    juce::TextButton backBtn { "< RETOUR" };
     juce::ToggleButton power;
     std::unique_ptr<ButtonAtt> powerAtt;
-    AmberKnob thr, rng;
+    std::unique_ptr<KnobCell> thr, rng;
     DsSeg mode, band;
     DsBandBar bar;
     DsListen listen;
-    juce::Rectangle<int> display, meterArea, titleArea, barArea, valThr, valRng;
+    juce::Rectangle<int> titleR, screen, meters;
     float grSmooth = 0.f;
 };
 
@@ -256,7 +256,6 @@ class SimpleView : public juce::Component
 public:
     SimpleView (YazaVoxProcessor&, std::function<void()> onPro);
     ~SimpleView() override { setLookAndFeel (nullptr); }
-    std::function<void()> onDs;
     void pushLevels (float inPk, float outPk);
     void refresh();
     void paint (juce::Graphics&) override;
@@ -274,7 +273,7 @@ private:
     juce::Label compLabel;
     juce::ToggleButton lowCut { "Low cut" };
     std::unique_ptr<ButtonAtt> lowCutAtt;
-    juce::TextButton autoIn { "Auto input" }, autoVoice { "AUTO VOIX" }, prevBtn { "<" }, nextBtn { ">" }, proBtn { "PRO" }, dsBtn { "DS" };
+    juce::TextButton autoIn { "Auto input" }, autoVoice { "AUTO VOIX" }, prevBtn { "<" }, nextBtn { ">" }, proBtn { "PRO" };
     juce::ComboBox presets;
     int autoShow = 0;
 
@@ -297,7 +296,6 @@ public:
     ~YazaVoxEditor() override;
     void paint (juce::Graphics&) override;
     void resized() override;
-    void openDs();
 
 private:
     void timerCallback() override;
@@ -310,8 +308,7 @@ private:
     juce::TextButton prevBtn { "<" }, nextBtn { ">" }, abBtn { "A" }, copyBtn { "A>B" }, resetBtn { "RESET" }, simpleBtn { "SIMPLE" }, autoBtn { "AUTO VOIX" };
     int autoShow = 0;
     std::unique_ptr<SimpleView> simple;
-    std::unique_ptr<DsPanel> ds;
-    juce::TextButton dsOpenBtn { "DE-ESSER PRO >" };
+    std::unique_ptr<DsMini> dsMini;
     void applyMode();
     juce::ToggleButton bypassBtn { "BYPASS" };
     std::unique_ptr<ButtonAtt> bypassAtt;
