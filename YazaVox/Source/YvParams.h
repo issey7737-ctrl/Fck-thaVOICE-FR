@@ -68,9 +68,9 @@ struct Def
     X(satDrive,   "satDrive",   "DRIVE",    0,   100, 25,   1,    1,   KFloat,  " %",       MFx,     "SATURATION") \
     X(satTone,    "satTone",    "TONE",    -100, 100, 0,    1,    1,   KFloat,  "",         MFx,     "SATURATION") \
     X(satMix,     "satMix",     "MIX",      0,   100, 100,  1,    1,   KFloat,  " %",       MFx,     "SATURATION") \
-    X(airOn,      "airOn",      "ON",       0,   1,   0,    1,    1,   KBool,   "",         MFx,     "AIR") \
-    X(airMid,     "airMid",     "MID AIR",  0,   100, 35,   1,    1,   KFloat,  " %",       MFx,     "AIR") \
-    X(airHigh,    "airHigh",    "HIGH AIR", 0,   100, 45,   1,    1,   KFloat,  " %",       MFx,     "AIR") \
+    X(airOn,      "airOn",      "ON",       0,   1,   0,    1,    1,   KBool,   "",         MEq,     "AIR") \
+    X(airMid,     "airMid",     "MID AIR",  0,   100, 35,   1,    1,   KFloat,  " %",       MEq,     "AIR") \
+    X(airHigh,    "airHigh",    "HIGH AIR", 0,   100, 45,   1,    1,   KFloat,  " %",       MEq,     "AIR") \
     X(dblOn,      "dblOn",      "ON",       0,   1,   0,    1,    1,   KBool,   "",         MFx,     "DOUBLER") \
     X(dblAmt,     "dblAmt",     "AMOUNT",   0,   100, 35,   1,    1,   KFloat,  " %",       MFx,     "DOUBLER") \
     X(dblSpread,  "dblSpread",  "SPREAD",   0,   100, 60,   1,    1,   KFloat,  " %",       MFx,     "DOUBLER") \

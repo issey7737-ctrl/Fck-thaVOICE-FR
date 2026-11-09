@@ -1362,7 +1362,7 @@ public:
         comp.setup (v); eq.setup (v); des.setup (v); air.setup (v); sat.setup (v); dbl.setup (v); cho.setup (v); phn.setup (v);
         dly.setup (v, bpm); rev.setup (v); tune.setup (v); lim.setCeiling (v[limCeil]);
 
-        const bool on[kRamps] = { v[eqOn] > 0.5f, v[compOn] > 0.5f, v[fxOn] > 0.5f && v[deessOn] > 0.5f, v[fxOn] > 0.5f && v[satOn] > 0.5f, v[fxOn] > 0.5f && v[airOn] > 0.5f,
+        const bool on[kRamps] = { v[eqOn] > 0.5f, v[compOn] > 0.5f, v[fxOn] > 0.5f && v[deessOn] > 0.5f, v[fxOn] > 0.5f && v[satOn] > 0.5f, v[airOn] > 0.5f,
                                   v[fxOn] > 0.5f && v[dblOn] > 0.5f, v[fxOn] > 0.5f && v[choOn] > 0.5f, v[fxOn] > 0.5f && v[phoneOn] > 0.5f,
                                   v[fxOn] > 0.5f && v[widthOn] > 0.5f, v[dlyOn] > 0.5f, v[revOn] > 0.5f };
         if (first) { for (int i = 0; i < kRamps; ++i) ramp[(size_t) i] = on[i] ? 1.0 : 0.0; byp = v[bypass] > 0.5f ? 1.0 : 0.0; first = false; }

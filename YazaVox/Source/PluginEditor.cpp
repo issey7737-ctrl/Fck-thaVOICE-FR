@@ -815,7 +815,8 @@ SimpleView::SimpleView (YazaVoxProcessor& p, std::function<void()> pro) : proc (
     // EQ
     rows.push_back ({ "EQ", eqOn, {}, {} });
     rows.back().items = { add (new AmberKnob (p, lsG, "Low", { eqOn }, onAlways (eqOn))), add (new AmberKnob (p, lmG, "Mid", { eqOn }, onAlways (eqOn))),
-                          add (new AmberKnob (p, hmG, "Hi", { eqOn }, onAlways (eqOn))), add (new AmberKnob (p, hsG, "Air", { eqOn }, onAlways (eqOn))) };
+                          add (new AmberKnob (p, hmG, "Hi", { eqOn }, onAlways (eqOn))), add (new AmberKnob (p, hsG, "Air", { eqOn }, onAlways (eqOn))),
+                          add (new AmberKnob (p, airHigh, "Exciter", { airOn }, [&p] (float v) { setReal (p, airOn, v > 0.f ? 1.f : 0.f); })) };
     // TUNE
     rows.push_back ({ "TUNE", tuneOn, {}, {} });
     rows.back().items = { add (new ToggleCell (p, tuneOn)), add (new ChoiceCell (p, tuneKey)), add (new ChoiceCell (p, tuneScale)),
@@ -823,7 +824,7 @@ SimpleView::SimpleView (YazaVoxProcessor& p, std::function<void()> pro) : proc (
     // FX
     rows.push_back ({ "FX", fxOn, {}, {} });
     rows.back().items = { add (new AmberKnob (p, deessAmt, "De-ess", { fxOn, deessOn }, onFx (deessOn))), add (new AmberKnob (p, satDrive, "Drive", { fxOn, satOn }, onFx (satOn))),
-                          add (new AmberKnob (p, phoneAmt, "Phone", { fxOn, phoneOn }, onFx (phoneOn))), add (new AmberKnob (p, airHigh, "Air", { fxOn, airOn }, onFx (airOn))), add (new AmberKnob (p, dblAmt, "Doubler", { fxOn, dblOn }, onFx (dblOn))),
+                          add (new AmberKnob (p, phoneAmt, "Phone", { fxOn, phoneOn }, onFx (phoneOn))), add (new AmberKnob (p, dblAmt, "Doubler", { fxOn, dblOn }, onFx (dblOn))),
                           add (new AmberKnob (p, choMix, "Chorus", { fxOn, choOn }, onFx (choOn))) };
     // DLY
     rows.push_back ({ "DLY", dlyOn, {}, {} });
@@ -1318,7 +1319,7 @@ void DsMini::paint (juce::Graphics& g)
 //==============================================================================
 YazaVoxEditor::YazaVoxEditor (YazaVoxProcessor& p)
     : AudioProcessorEditor (&p), proc (p), inKnob (p, inGain), outKnob (p, outGain), limKnob (p, limCeil), eqView (p), noteDisp (p),
-      comp (p, MComp, 6), eq (p, MEq, 8), fx (p, MFx, 6, "DE-ESSER"), dly (p, MDly, 7), rev (p, MRev, 7), tune (p, MTune, 4)
+      comp (p, MComp, 6), eq (p, MEq, 9), fx (p, MFx, 6, "DE-ESSER"), dly (p, MDly, 7), rev (p, MRev, 7), tune (p, MTune, 4)
 {
     setLookAndFeel (&laf);
 
