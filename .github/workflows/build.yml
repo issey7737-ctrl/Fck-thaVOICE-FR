@@ -1,0 +1,46 @@
+name: Build Fck ThaVOICE (+ ThaMASTER si present)
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build ThaVOICE
+        run: cmake --build build --config Release --target YazaVox_VST3 --parallel
+
+      - name: Build ThaMASTER
+        if: ${{ hashFiles('ThaMaster/Source/PluginProcessor.cpp') != '' }}
+        run: cmake --build build --config Release --target ThaMaster_VST3 --parallel
+
+      - name: Package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Get-ChildItem -Path build -Recurse -Filter "*.vst3" -Directory | ForEach-Object { Copy-Item -Recurse -Path $_.FullName -Destination dist/ }
+
+      - name: Installeur (.exe)
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          choco install innosetup -y --no-progress
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" installer\ThaSuite.iss
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ThaSuite-VST3-Windows
+          path: dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: FckThaSuite-Installer
+          path: installer_out/FckThaSuite-Installer.exe
+          if-no-files-found: warn

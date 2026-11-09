@@ -47,7 +47,8 @@ target_link_libraries(YazaVox
         juce::juce_recommended_lto_flags)
 
 
-# ThaMASTER : mastering (SPECTRAL, COMP, ANALOG, STEREO, EQ, CLIP, LIMITER, mesures LUFS)
+# ThaMASTER : mastering (optionnel : ignore si le dossier ThaMaster/ n'est pas dans le depot)
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/ThaMaster/Source/PluginProcessor.cpp")
 juce_add_plugin(ThaMaster
     COMPANY_NAME "ThaVOICE"
     IS_SYNTH FALSE
@@ -79,3 +80,4 @@ target_link_libraries(ThaMaster
     PUBLIC
         juce::juce_recommended_config_flags
         juce::juce_recommended_lto_flags)
+endif()
