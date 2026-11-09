@@ -103,9 +103,11 @@ private:
 class EqView : public juce::Component
 {
 public:
-    explicit EqView (YazaVoxProcessor&);
+    // cut = false : EQ principal (4 bandes) ; cut = true : EQ de coupe (low cut / high cut) avec menu de reglages rapides
+    EqView (YazaVoxProcessor&, bool cutMode, const EqView* spectrumSource = nullptr);
     void update();   // 30 Hz : lit l'analyseur
     void paint (juce::Graphics&) override;
+    void resized() override;
     void mouseDown (const juce::MouseEvent&) override;
     void mouseDrag (const juce::MouseEvent&) override;
     void mouseUp (const juce::MouseEvent&) override;
@@ -114,16 +116,22 @@ public:
     void mouseMove (const juce::MouseEvent&) override;
     void mouseExit (const juce::MouseEvent&) override { hoverBand = -1; repaint(); }
 private:
-    juce::Point<float> nodePos (int i) const;
     static constexpr int kOrder = 12, kN = 1 << kOrder;
-    struct BandIdx { int f, g, q; };
+    struct BandIdx { int f, g, q; juce::Colour colour; int num; };
+    juce::Point<float> nodePos (int i) const;
     float xOf (double f) const;
     double fOf (float x) const;
     float yOfDb (double db) const;
     int hit (juce::Point<float>) const;
     void setNorm (int idx, float real, bool gesture);
+    void applyCutPreset (int item);
+    void syncCutBox();
 
     YazaVoxProcessor& proc;
+    const bool cutMode;
+    const EqView* specSrc;
+    int topPad = 0;
+    juce::ComboBox cutBox;
     juce::dsp::FFT fft { kOrder };
     juce::dsp::WindowingFunction<float> window { (size_t) kN, juce::dsp::WindowingFunction<float>::hann };
     std::array<float, kN> ring {};
@@ -131,13 +139,13 @@ private:
     std::array<float, kN / 2> spec {};
     int wpos = 0;
     int dragBand = -1, hoverBand = -1;
-    std::array<BandIdx, 6> bands;
+    std::vector<BandIdx> bands;
 };
 
 class ModulePanel : public juce::Component
 {
 public:
-    ModulePanel (YazaVoxProcessor&, int module, int rowCells, const char* skipGroup = nullptr);
+    ModulePanel (YazaVoxProcessor&, int module, int rowCells, std::vector<juce::String> skipGroups = {});
     void paint (juce::Graphics&) override;
     void resized() override;
     void refresh();
@@ -319,7 +327,7 @@ private:
     LevelMeter inMeter { "IN" }, outMeter { "OUT" };
 
     GrMeter grMeter;
-    EqView eqView;
+    EqView eqView, cutView;
     NoteDisplay noteDisp;
     ModulePanel comp, eq, fx, dly, rev, tune;
     juce::Rectangle<int> logoRect, headerRect;

@@ -315,10 +315,58 @@ void NoteDisplay::paint (juce::Graphics& g)
 }
 
 //==============================================================================
-EqView::EqView (YazaVoxProcessor& p) : proc (p)
+static const juce::Colour eqNodeCol[6] = { juce::Colour (0xffa17be8), juce::Colour (0xffe76fb0), juce::Colour (0xffee8d4c), juce::Colour (0xffe9d54e), juce::Colour (0xff62cf72), juce::Colour (0xff5fa3ea) };
+
+struct CutPreset { const char* name; float hp, lp; bool hpOn; };
+static const CutPreset kCutPresets[] = {
+    { "20 Hz + 18 kHz cut", 20.f, 18000.f, true },  { "30 Hz + 18 kHz cut", 30.f, 18000.f, true },  { "40 Hz + 18 kHz cut", 40.f, 18000.f, true },
+    { "40 Hz cut", 40.f, 20000.f, true },           { "60 Hz + 16 kHz cut", 60.f, 16000.f, true },  { "80 Hz + 16 kHz cut", 80.f, 16000.f, true },
+    { "100 Hz + 14 kHz cut", 100.f, 14000.f, true }, { "120 Hz cut", 120.f, 20000.f, true },         { "Off", 80.f, 20000.f, false } };
+
+EqView::EqView (YazaVoxProcessor& p, bool cut, const EqView* src) : proc (p), cutMode (cut), specSrc (src)
 {
-    bands = { BandIdx { hpFreq, -1, -1 }, BandIdx { lsF, lsG, lsQ }, BandIdx { lmF, lmG, lmQ }, BandIdx { hmF, hmG, hmQ }, BandIdx { hsF, hsG, hsQ }, BandIdx { lpFreq, -1, -1 } };   // 6 noeuds, comme un Fruity EQ
+    if (cutMode)
+    {
+        bands = { BandIdx { hpFreq, -1, -1, eqNodeCol[0], 1 }, BandIdx { lpFreq, -1, -1, eqNodeCol[5], 2 } };
+        topPad = 20;
+        int id = 1;
+        for (auto& pr : kCutPresets) cutBox.addItem (pr.name, id++);
+        cutBox.setTextWhenNothingSelected ("Custom");
+        cutBox.onChange = [this] { applyCutPreset (cutBox.getSelectedItemIndex()); };
+        addAndMakeVisible (cutBox);
+    }
+    else
+        bands = { BandIdx { lsF, lsG, lsQ, eqNodeCol[1], 1 }, BandIdx { lmF, lmG, lmQ, eqNodeCol[2], 2 }, BandIdx { hmF, hmG, hmQ, eqNodeCol[3], 3 }, BandIdx { hsF, hsG, hsQ, eqNodeCol[4], 4 } };
     spec.fill (-120.f);
+}
+
+void EqView::resized()
+{
+    if (cutMode) cutBox.setBounds (getWidth() - 168, 2, 164, 17);
+}
+
+void EqView::applyCutPreset (int item)
+{
+    if (item < 0 || item >= (int) (sizeof (kCutPresets) / sizeof (kCutPresets[0]))) return;
+    const auto& pr = kCutPresets[item];
+    setNorm (hpFreq, pr.hp, false); setNorm (lpFreq, pr.lp, false); setNorm (hpOn, pr.hpOn ? 1.f : 0.f, false);
+}
+
+void EqView::syncCutBox()
+{
+    int match = -1;
+    const float hp = proc.getParam (hpFreq), lp = proc.getParam (lpFreq);
+    const bool on = proc.getParam (hpOn) > 0.5f;
+    for (int i = 0; i < (int) (sizeof (kCutPresets) / sizeof (kCutPresets[0])); ++i)
+    {
+        const auto& pr = kCutPresets[i];
+        if (pr.hpOn != on) continue;
+        if (on && std::abs (pr.hp - hp) > 1.5f) continue;
+        if (std::abs (pr.lp - lp) > 15.f) continue;
+        match = i; break;
+    }
+    if (match != cutBox.getSelectedItemIndex() && ! cutBox.isPopupActive())
+        cutBox.setSelectedItemIndex (match, juce::dontSendNotification);
 }
 
 float EqView::xOf (double f) const
@@ -331,11 +379,21 @@ double EqView::fOf (float x) const
 }
 float EqView::yOfDb (double db) const
 {
-    return (float) getHeight() * (0.5f - (float) db / 36.f);   // +-18 dB
+    return (float) topPad + (float) (getHeight() - topPad) * (0.5f - (float) db / 36.f);   // +-18 dB
+}
+
+juce::Point<float> EqView::nodePos (int i) const
+{
+    const auto& b = bands[(size_t) i];
+    const float m = std::clamp ((float) getHeight() * 0.09f, 7.f, 12.f);
+    const float x = std::clamp (xOf (proc.getParam (b.f)), m, (float) getWidth() - m);
+    const float y = b.g < 0 ? yOfDb (0.0) : yOfDb (juce::jlimit (-18.0, 18.0, (double) proc.getParam (b.g)));
+    return { x, y };
 }
 
 void EqView::update()
 {
+    if (specSrc != nullptr) { syncCutBox(); repaint(); return; }
     auto& e = proc.engine;
     int s1, z1, s2, z2;
     const int ready = e.scopeFifo.getNumReady();
@@ -358,32 +416,27 @@ void EqView::update()
     repaint();
 }
 
-static const juce::Colour eqNodeCol[6] = { juce::Colour (0xffa17be8), juce::Colour (0xffe76fb0), juce::Colour (0xffee8d4c), juce::Colour (0xffe9d54e), juce::Colour (0xff62cf72), juce::Colour (0xff5fa3ea) };
-
-juce::Point<float> EqView::nodePos (int i) const
-{
-    const auto& b = bands[(size_t) i];
-    const float m = std::clamp ((float) getHeight() * 0.09f, 7.f, 12.f);
-    const float x = std::clamp (xOf (proc.getParam (b.f)), m, (float) getWidth() - m);
-    const float y = b.g < 0 ? yOfDb (0.0) : yOfDb (juce::jlimit (-18.0, 18.0, (double) proc.getParam (b.g)));
-    return { x, y };
-}
-
 void EqView::paint (juce::Graphics& g)
 {
     const auto r = getLocalBounds().toFloat();
+    const float gt = (float) topPad, gh = r.getHeight() - gt;
     const float cy = yOfDb (0.0);
-    // fond facon Fruity EQ 2 : teinte bleu-ardoise, moitie haute plus sombre, moitie basse plus claire
-    g.setGradientFill (juce::ColourGradient (juce::Colour (0xff142027), 0, 0, juce::Colour (0xff1c2d36), 0, cy, false));
+    g.setGradientFill (juce::ColourGradient (juce::Colour (0xff142027), 0, gt, juce::Colour (0xff1c2d36), 0, cy, false));
     g.fillRoundedRectangle (r, 7.f);
     g.saveState();
     juce::Path clip; clip.addRoundedRectangle (r, 7.f);
     g.reduceClipRegion (clip);
     g.setGradientFill (juce::ColourGradient (juce::Colour (0xff2a3d48), 0, cy, juce::Colour (0xff22323c), 0, r.getBottom(), false));
     g.fillRect (r.withTrimmedTop (cy));
+    if (cutMode)   // barre de titre facon Fruity
+    {
+        g.setColour (juce::Colour (0xff0f1a20)); g.fillRect (r.withHeight (gt));
+        g.setColour (juce::Colour (0xff3d5766)); g.drawHorizontalLine ((int) gt, 0.f, r.getRight());
+        g.setColour (juce::Colour (0xffb7ccd6)); g.setFont (bold (10.5f));
+        g.drawText ("CUT EQ", 8, 0, getWidth() - 180, topPad, juce::Justification::centredLeft);
+    }
 
-    // grille fine (decades + subdivisions) et reperes
-    g.setFont (plain (std::clamp (r.getHeight() * 0.075f, 8.f, 11.f)));
+    g.setFont (plain (std::clamp (gh * 0.075f, 8.f, 11.f)));
     for (double dec : { 10.0, 100.0, 1000.0 })
         for (int k = 1; k < 10; ++k)
         {
@@ -392,7 +445,7 @@ void EqView::paint (juce::Graphics& g)
             const float x = xOf (f);
             const bool major = (k == 1 || k == 2 || k == 5);
             g.setColour (juce::Colour (0xff5d7f90).withAlpha (major ? 0.20f : 0.09f));
-            g.drawVerticalLine ((int) x, 0.f, r.getBottom());
+            g.drawVerticalLine ((int) x, gt, r.getBottom());
             if (major && f >= 50.0)
             {
                 g.setColour (juce::Colour (0xff9db6c2).withAlpha (0.65f));
@@ -407,7 +460,8 @@ void EqView::paint (juce::Graphics& g)
         g.drawText (juce::String (db > 0 ? "+" : "") + juce::String (db), (int) r.getRight() - 26, (int) yOfDb (db) - 11, 24, 11, juce::Justification::right);
     }
 
-    // spectre en temps reel (ref : 0 dBFS en haut, -90 en bas), remplissage doux
+    // spectre en temps reel
+    const auto& S = specSrc != nullptr ? specSrc->spec : spec;
     const double sr = proc.getSampleRate_();
     juce::Path sp, spLine;
     const int W = getWidth();
@@ -417,32 +471,35 @@ void EqView::paint (juce::Graphics& g)
         const double f0 = fOf ((float) px), f1 = fOf ((float) px + 2.f);
         const int b0 = std::max (1, (int) (f0 / sr * kN)), b1 = std::max (b0 + 1, std::min (kN / 2 - 1, (int) (f1 / sr * kN) + 1));
         float m = -120.f;
-        for (int b = b0; b < b1; ++b) m = std::max (m, spec[(size_t) b]);
-        const float y = r.getHeight() * (1.f - juce::jlimit (0.f, 1.f, (m + 90.f) / 90.f));
+        for (int b = b0; b < b1; ++b) m = std::max (m, S[(size_t) b]);
+        const float y = gt + gh * (1.f - juce::jlimit (0.f, 1.f, (m + 90.f) / 90.f));
         if (! started) { sp.startNewSubPath (0.f, r.getBottom()); sp.lineTo ((float) px, y); spLine.startNewSubPath ((float) px, y); started = true; }
         else { sp.lineTo ((float) px, y); spLine.lineTo ((float) px, y); }
     }
     if (started)
     {
         sp.lineTo ((float) W, r.getBottom()); sp.closeSubPath();
-        g.setGradientFill (juce::ColourGradient (juce::Colour (0xffcfe3ec).withAlpha (0.42f), 0, 0, juce::Colour (0xff8fb0c0).withAlpha (0.10f), 0, r.getBottom(), false));
+        g.setGradientFill (juce::ColourGradient (juce::Colour (0xffcfe3ec).withAlpha (0.42f), 0, gt, juce::Colour (0xff8fb0c0).withAlpha (0.10f), 0, r.getBottom(), false));
         g.fillPath (sp);
         g.setColour (juce::Colour (0xffdcecf3).withAlpha (0.55f));
         g.strokePath (spLine, juce::PathStrokeType (1.1f, juce::PathStrokeType::curved));
     }
 
-    // ligne 0 dB
     g.setColour (juce::Colours::white.withAlpha (0.55f));
     g.drawHorizontalLine ((int) cy, 0.f, r.getRight());
 
-    // courbe de reponse
+    // courbe de reponse : EQ principal = 4 bandes seulement ; EQ de coupe = filtres seulement
     float v[Count];
     for (int i = 0; i < Count; ++i) v[i] = proc.getParam (i);
     const bool eqActive = v[eqOn] > 0.5f;
+    float vv[Count];
+    std::copy (v, v + Count, vv);
+    if (cutMode) vv[lsG] = vv[lmG] = vv[hmG] = vv[hsG] = 0.f;
+    else { vv[hpOn] = 0.f; vv[lpFreq] = 20000.f; }
     juce::Path curve, area;
     for (int px = 0; px <= W; px += 2)
     {
-        const double db = EQ::responseDb (v, sr, fOf ((float) px));
+        const double db = EQ::responseDb (vv, sr, fOf ((float) px));
         const float y = yOfDb (juce::jlimit (-18.0, 18.0, db));
         if (px == 0) { curve.startNewSubPath (0.f, y); area.startNewSubPath (0.f, cy); area.lineTo (0.f, y); }
         else { curve.lineTo ((float) px, y); area.lineTo ((float) px, y); }
@@ -456,14 +513,14 @@ void EqView::paint (juce::Graphics& g)
     g.strokePath (curve, juce::PathStrokeType (1.7f));
 
     // noeuds numerotes
-    const float rad = std::clamp (r.getHeight() * 0.075f, 6.f, 11.f);
-    for (int i = 0; i < 6; ++i)
+    const float rad = std::clamp (gh * 0.075f, 6.f, 11.f);
+    for (int i = 0; i < (int) bands.size(); ++i)
     {
         const auto& b = bands[(size_t) i];
         const auto c = nodePos (i);
-        const bool act = b.g < 0 ? (i == 0 ? v[hpFreq] > 21.f : v[lpFreq] < 19900.f) : std::abs (v[b.g]) > 0.01f;
+        const bool act = b.g < 0 ? (b.f == hpFreq ? v[hpOn] > 0.5f : v[lpFreq] < 19900.f) : std::abs (v[b.g]) > 0.01f;
         const bool hot = dragBand == i || hoverBand == i;
-        const auto col_ = eqNodeCol[i];
+        const auto col_ = b.colour;
         if (act || hot) { g.setColour (col_.withAlpha (hot ? 0.38f : 0.22f)); g.fillEllipse (c.x - rad * 1.7f, c.y - rad * 1.7f, rad * 3.4f, rad * 3.4f); }
         g.setGradientFill (juce::ColourGradient (col_.darker (0.25f).withAlpha (0.85f), c.x, c.y - rad, col_.darker (0.75f), c.x, c.y + rad, false));
         g.fillEllipse (c.x - rad, c.y - rad, rad * 2.f, rad * 2.f);
@@ -471,9 +528,8 @@ void EqView::paint (juce::Graphics& g)
         g.drawEllipse (c.x - rad, c.y - rad, rad * 2.f, rad * 2.f, hot ? 2.2f : 1.6f);
         g.setFont (bold (rad * 1.05f));
         g.setColour (juce::Colours::white.withAlpha (act || hot ? 1.f : 0.75f));
-        g.drawText (juce::String (i + 1), (int) (c.x - rad), (int) (c.y - rad), (int) (rad * 2.f), (int) (rad * 2.f), juce::Justification::centred);
+        g.drawText (juce::String (b.num), (int) (c.x - rad), (int) (c.y - rad), (int) (rad * 2.f), (int) (rad * 2.f), juce::Justification::centred);
     }
-    // infobulle du noeud survole / glisse
     const int hb = dragBand >= 0 ? dragBand : hoverBand;
     if (hb >= 0)
     {
@@ -482,11 +538,11 @@ void EqView::paint (juce::Graphics& g)
         const double f = proc.getParam (b.f);
         juce::String t = (f >= 1000.0 ? juce::String (f / 1000.0, 2) + " kHz" : juce::String ((int) f) + " Hz");
         if (b.g >= 0) t << "   " << (proc.getParam (b.g) > 0 ? "+" : "") << juce::String (proc.getParam (b.g), 1) << " dB   Q " << juce::String (proc.getParam (b.q), 2);
-        g.setFont (bold (std::clamp (r.getHeight() * 0.085f, 9.f, 12.f)));
+        g.setFont (bold (std::clamp (gh * 0.085f, 9.f, 12.f)));
         const float tw = g.getCurrentFont().getStringWidthFloat (t) + 12.f, th = g.getCurrentFont().getHeight() + 6.f;
-        juce::Rectangle<float> tb (std::clamp (c.x - tw / 2, 3.f, r.getRight() - tw - 3.f), c.y < r.getHeight() * 0.4f ? c.y + rad * 1.5f : c.y - rad * 1.5f - th, tw, th);
+        juce::Rectangle<float> tb (std::clamp (c.x - tw / 2, 3.f, r.getRight() - tw - 3.f), c.y < gt + gh * 0.4f ? c.y + rad * 1.5f : c.y - rad * 1.5f - th, tw, th);
         g.setColour (juce::Colour (0xff0d171c).withAlpha (0.88f)); g.fillRoundedRectangle (tb, 4.f);
-        g.setColour (eqNodeCol[hb]); g.drawRoundedRectangle (tb, 4.f, 1.f);
+        g.setColour (b.colour); g.drawRoundedRectangle (tb, 4.f, 1.f);
         g.setColour (juce::Colours::white); g.drawText (t, tb.toNearestInt(), juce::Justification::centred);
     }
     g.restoreState();
@@ -497,7 +553,7 @@ void EqView::paint (juce::Graphics& g)
 int EqView::hit (juce::Point<float> p) const
 {
     int best = -1; float bd = std::max (16.f, (float) getHeight() * 0.12f);
-    for (int i = 0; i < 6; ++i)
+    for (int i = 0; i < (int) bands.size(); ++i)
     {
         const float d = nodePos (i).getDistanceFrom (p);
         if (d < bd) { bd = d; best = i; }
@@ -524,6 +580,7 @@ void EqView::mouseDown (const juce::MouseEvent& e)
         const auto& b = bands[(size_t) dragBand];
         proc.apvts.getParameter (kDefs[b.f].id)->beginChangeGesture();
         if (b.g >= 0) proc.apvts.getParameter (kDefs[b.g].id)->beginChangeGesture();
+        if (b.f == hpFreq) setNorm (hpOn, 1.f, false);
     }
 }
 void EqView::mouseDrag (const juce::MouseEvent& e)
@@ -532,11 +589,11 @@ void EqView::mouseDrag (const juce::MouseEvent& e)
     const auto& b = bands[(size_t) dragBand];
     const auto& df = kDefs[b.f];
     const float f = juce::jlimit (df.lo, df.hi, (float) fOf (e.position.x));
-    setNorm (b.f, f, false);
+    setNorm (b.f, b.f == hpFreq || b.f == lpFreq ? std::round (f) : f, false);
     if (b.g >= 0)
     {
         const auto& dg = kDefs[b.g];
-        const float db = juce::jlimit (dg.lo, dg.hi, (0.5f - e.position.y / (float) getHeight()) * 36.f);
+        const float db = juce::jlimit (dg.lo, dg.hi, (0.5f - (e.position.y - (float) topPad) / (float) (getHeight() - topPad)) * 36.f);
         setNorm (b.g, std::round (db * 10.f) / 10.f, false);
     }
 }
@@ -556,7 +613,8 @@ void EqView::mouseDoubleClick (const juce::MouseEvent& e)
     if (h < 0) return;
     const auto& b = bands[(size_t) h];
     if (b.g >= 0) setNorm (b.g, 0.f, false);
-    else setNorm (b.f, kDefs[b.f].def, false);
+    else if (b.f == hpFreq) setNorm (hpOn, proc.getParam (hpOn) > 0.5f ? 0.f : 1.f, false);     // double-clic : coupe le low cut / le remet
+    else setNorm (lpFreq, 20000.f, false);                                                         // high cut : retour a "ouvert"
 }
 void EqView::mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDetails& w)
 {
@@ -568,7 +626,7 @@ void EqView::mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDe
 }
 
 //==============================================================================
-ModulePanel::ModulePanel (YazaVoxProcessor& p, int m, int rc, const char* skipGroup) : proc (p), module (m), rowCells (rc)
+ModulePanel::ModulePanel (YazaVoxProcessor& p, int m, int rc, std::vector<juce::String> skipGroups) : proc (p), module (m), rowCells (rc)
 {
     for (int i = 0; i < Count; ++i)
         if (kDefs[i].module == m && kDefs[i].group[0] == 0 && isOnId (i)) onIdx = i;
@@ -580,7 +638,7 @@ ModulePanel::ModulePanel (YazaVoxProcessor& p, int m, int rc, const char* skipGr
     {
         const auto& d = kDefs[i];
         if (d.module != m || d.group[0] == 0) continue;
-        if (skipGroup != nullptr && juce::String (d.group) == skipGroup) continue;
+        if (skipGroups.end() != std::find (skipGroups.begin(), skipGroups.end(), juce::String (d.group))) continue;
         Group* grp = nullptr;
         for (auto& g : groups) if (g->name == d.group) grp = g.get();
         if (grp == nullptr)
@@ -655,8 +713,8 @@ void ModulePanel::resized()
     auto top = area.removeFromTop (th);
     power->setBounds (top.removeFromLeft (th).reduced (th / 5));
     if (headerExtra) headerExtra->setBounds (top.removeFromRight (std::min (top.getWidth(), 240)).reduced (0, 2));
-    if (extraLeft) extraLeft->setBounds (area.removeFromLeft ((int) ((float) area.getWidth() * extraLeftFrac)).reduced (2, 2));
     if (extraTop) extraTop->setBounds (area.removeFromTop ((int) ((float) area.getHeight() * extraFrac)).reduced (0, 2));
+    if (extraLeft) extraLeft->setBounds (area.removeFromLeft ((int) ((float) area.getWidth() * extraLeftFrac)).reduced (0, 2).withTrimmedRight (4));
     area.removeFromTop (2);
 
     // repartition en rangees
@@ -1140,49 +1198,51 @@ static const juce::Colour dsYellow { 0xffffd23c }, dsGreen { 0xff8be04a }, dsBg1
 
 float DsBandBar::xOf (double f) const
 {
-    const float m = 26.f, w = (float) getWidth() - 2.f * m;
+    const float m = 12.f, w = (float) getWidth() - 2.f * m;
     return m + w * (float) (std::log (f / 2000.0) / std::log (18000.0 / 2000.0));
 }
 double DsBandBar::fOf (float x) const
 {
-    const float m = 26.f, w = (float) getWidth() - 2.f * m;
+    const float m = 12.f, w = (float) getWidth() - 2.f * m;
     return 2000.0 * std::pow (18000.0 / 2000.0, juce::jlimit (0.f, 1.f, (x - m) / w));
 }
 void DsBandBar::paint (juce::Graphics& g)
 {
     const auto r = getLocalBounds().toFloat();
-    const float ty = r.getY() + r.getHeight() * 0.40f, th = std::max (8.f, r.getHeight() * 0.22f);
+    const float H = r.getHeight();
+    const float txtH = std::clamp (H * 0.30f, 9.f, 12.f);
+    const float s = std::clamp (H * 0.17f, 5.f, 8.f);                 // taille des poignees
+    const float th = std::clamp (H * 0.22f, 6.f, 11.f);               // epaisseur de la piste
+    const float ty = s + 2.f;
+    const float x0 = 12.f, x1 = r.getWidth() - 12.f;
     g.setColour (juce::Colour (0xff0b0907));
-    g.fillRoundedRectangle (r.getX() + 12, ty, r.getWidth() - 24, th, 3.f);
+    g.fillRoundedRectangle (x0, ty, x1 - x0, th, 2.f);
     g.setColour (col::edge.brighter (0.3f));
-    g.drawRoundedRectangle (r.getX() + 12, ty, r.getWidth() - 24, th, 3.f, 1.f);
-    // graduations
-    g.setFont (plain (std::clamp (r.getHeight() * 0.22f, 8.f, 11.f)));
-    for (double f : { 2000.0, 3000.0, 4000.0, 6000.0, 8000.0, 10000.0, 14000.0, 18000.0 })
+    g.drawRoundedRectangle (x0, ty, x1 - x0, th, 2.f, 1.f);
+    for (double f : { 2000.0, 3000.0, 4000.0, 6000.0, 8000.0, 10000.0, 14000.0 })     // graduations (traits seuls)
     {
-        const float x = xOf (f);
-        g.setColour (juce::Colours::white.withAlpha (0.22f));
-        g.drawVerticalLine ((int) x, ty + 2, ty + th - 2);
-        g.setColour (col::textDim);
-        g.drawText (f >= 10000 ? juce::String (f / 1000.0, 0) + "k" : juce::String (f / 1000.0, f == 3000.0 ? 0 : 0) + "k", (int) x - 16, (int) (ty + th + 1), 32, 12, juce::Justification::centred);
+        g.setColour (juce::Colours::white.withAlpha (0.18f));
+        g.drawVerticalLine ((int) xOf (f), ty + 1, ty + th - 1);
     }
     const double lo = proc.getParam (deessFreq), hi = std::max ((double) proc.getParam (deessHigh), lo * 1.25);
     const float xl = xOf (lo), xh = xOf (hi);
-    g.setGradientFill (juce::ColourGradient (juce::Colour (0xffffb81c).withAlpha (0.55f), 0, ty, juce::Colour (0xffd98a00).withAlpha (0.30f), 0, ty + th, false));
+    g.setGradientFill (juce::ColourGradient (juce::Colour (0xffffb81c).withAlpha (0.60f), 0, ty, juce::Colour (0xffd98a00).withAlpha (0.35f), 0, ty + th, false));
     g.fillRect (xl, ty + 1, xh - xl, th - 2);
+    // poignees : triangles qui pointent vers la bande depuis l'EXTERIEUR (jamais l'un sur l'autre)
     for (int k = 0; k < 2; ++k)
     {
-        const float x = k == 0 ? xl : xh;
+        const float x = k == 0 ? xl : xh, dir = k == 0 ? -1.f : 1.f;
         juce::Path tri;
-        const float s = std::clamp (th * 0.55f, 8.f, 14.f);
-        tri.addTriangle (x - s * (k == 0 ? 0.0f : 1.0f), ty - s, x + s * (k == 0 ? 1.0f : 0.0f), ty - s, x, ty + th);
+        tri.addTriangle (x, ty + th + 1.f, x, ty - s, x + dir * s * 1.2f, ty - s);
         g.setColour (juce::Colour (0xffe9e3d8)); g.fillPath (tri);
-        g.setColour (juce::Colours::black.withAlpha (0.6f)); g.strokePath (tri, juce::PathStrokeType (1.f));
+        g.setColour (juce::Colours::black.withAlpha (0.55f)); g.strokePath (tri, juce::PathStrokeType (0.8f));
+        g.setColour (juce::Colour (0xffffd23c)); g.drawVerticalLine ((int) x, ty, ty + th);
     }
-    g.setColour (dsYellow);
-    g.setFont (bold (std::clamp (r.getHeight() * 0.28f, 10.f, 14.f)));
-    g.drawText (juce::String (lo / 1000.0, 1) + " kHz", 4, 0, 90, (int) (ty - 2), juce::Justification::centredLeft);
-    g.drawText (juce::String (hi / 1000.0, 1) + " kHz", getWidth() - 94, 0, 90, (int) (ty - 2), juce::Justification::centredRight);
+    g.setColour (juce::Colour (0xffffd23c));
+    g.setFont (bold (txtH));
+    const float yt = ty + th + 3.f;
+    g.drawText (juce::String (lo / 1000.0, 1) + " kHz", 2, (int) yt, 70, (int) txtH + 2, juce::Justification::centredLeft);
+    g.drawText (juce::String (hi / 1000.0, 1) + " kHz", getWidth() - 72, (int) yt, 70, (int) txtH + 2, juce::Justification::centredRight);
 }
 void DsBandBar::mouseDown (const juce::MouseEvent& e)
 {
@@ -1389,8 +1449,8 @@ void DsMini::paint (juce::Graphics& g)
 
 //==============================================================================
 YazaVoxEditor::YazaVoxEditor (YazaVoxProcessor& p)
-    : AudioProcessorEditor (&p), proc (p), inKnob (p, inGain), outKnob (p, outGain), limKnob (p, limCeil), eqView (p), noteDisp (p),
-      comp (p, MComp, 6), eq (p, MEq, 9), fx (p, MFx, 6, "DE-ESSER"), dly (p, MDly, 7), rev (p, MRev, 7), tune (p, MTune, 4)
+    : AudioProcessorEditor (&p), proc (p), inKnob (p, inGain), outKnob (p, outGain), limKnob (p, limCeil), eqView (p, false), cutView (p, true, &eqView), noteDisp (p),
+      comp (p, MComp, 6), eq (p, MEq, 3, { "FILTERS", "LOW SHELF", "LOW MID", "HIGH MID", "HIGH SHELF" }), fx (p, MFx, 6, { "DE-ESSER" }), dly (p, MDly, 7), rev (p, MRev, 7), tune (p, MTune, 4)
 {
     setLookAndFeel (&laf);
 
@@ -1418,7 +1478,8 @@ YazaVoxEditor::YazaVoxEditor (YazaVoxProcessor& p)
     comp.headerExtra = &grMeter; comp.addAndMakeVisible (grMeter);
     dsMini = std::make_unique<DsMini> (proc);
     fx.extraLeft = dsMini.get(); fx.addAndMakeVisible (*dsMini); fx.extraLeftFrac = 0.43f;
-    eq.extraTop = &eqView; eq.addAndMakeVisible (eqView); eq.extraFrac = 0.46f;
+    eq.extraTop = &eqView; eq.addAndMakeVisible (eqView); eq.extraFrac = 0.52f;
+    eq.extraLeft = &cutView; eq.addAndMakeVisible (cutView); eq.extraLeftFrac = 0.62f;
     tune.headerExtra = &noteDisp; tune.addAndMakeVisible (noteDisp);
     for (auto* m : { &comp, &eq, &fx, &dly, &rev, &tune }) addAndMakeVisible (*m);
 
@@ -1462,7 +1523,7 @@ void YazaVoxEditor::timerCallback()
     if (simple->isVisible()) simple->pushLevels (inP, outP);
     else autoTick (proc, autoBtn, presets, autoShow);
     grMeter.push (proc.engine.grDb.load());
-    if (! simple->isVisible()) { eqView.update(); noteDisp.update(); }
+    if (! simple->isVisible()) { eqView.update(); cutView.update(); noteDisp.update(); }
 
     if ((tick++ & 3) == 0)
     {
