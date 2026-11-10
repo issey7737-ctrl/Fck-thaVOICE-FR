@@ -586,7 +586,7 @@ public:
         static const double ms[4] = { 2.9, 4.7, 7.9, 12.3 };
         for (int i = 0; i < 4; ++i) ap[i].init ((int) std::round (ms[i] * 0.001 * fs), i < 2 ? 0.6 : 0.5);
         for (auto& a : ap) a.clear();
-        hp[0].highPass (fs, 200.0, 0.7071); hp[1].highPass (fs, 200.0, 0.7071);
+        hp[0].highPass (fs, 1150.0, 0.7071); hp[1].highPass (fs, 1150.0, 0.7071);   // le lateral ne contient que les mediums/aigus (mesure sur un Wider de reference : mono compatible, graves centres)
         lp.lowPass (fs, 14000.0, 0.7071);
         hp[0].reset(); hp[1].reset(); lp.reset();
     }

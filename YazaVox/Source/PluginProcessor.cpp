@@ -191,7 +191,7 @@ void YazaVoxProcessor::applyPreset (int index)
         { "comp2On", 1 }, { "comp2Amt", 43 }, { "compWarm", 30 },   // reglages mesures sur un compresseur vocal de reference (Pro-C 2, style Vocal)
         { "fxOn", 1 }, { "deessOn", 1 }, { "deessFreq", 7000 }, { "deessHigh", 14000 }, { "deessAmt", 55 }, { "deessRange", 12 }, { "deessMode", 0 }, { "deessBand", 0 },
         { "satOn", 1 }, { "satDrive", 22 }, { "satTone", 8 }, { "satMix", 70 },
-        { "widthOn", 1 }, { "width", 118 },
+        { "widthOn", 1 }, { "width", 129 },
         { "dlyOn", 1 }, { "dlyMix", 8 }, { "dlyNote", 1 }, { "dlyFb", 25 }, { "dlyHP", 250 }, { "dlyLP", 6000 }, { "dlyDuck", 75 }, { "dlyPing", 1 },
         { "revOn", 1 }, { "revMode", 1 }, { "revDecay", 1.07f }, { "revPre", 0 }, { "revSize", 6 }, { "revDiff", 92 }, { "revMod", 0 },
         { "revMix", 20 }, { "revDamp", 65 }, { "revLow", 86 }, { "revHigh", 18400 }, { "revBass", 118 }, { "revDuck", 0 }, { "revWidth", 100 }
@@ -203,7 +203,7 @@ void YazaVoxProcessor::applyPreset (int index)
 
     static const std::vector<VV> presets = {
         /* 0  Init */ {},
-        /* 3  Rap Lead Clean */ mk ({ { "revMix", 12 }, { "dlyMix", 6 }, { "width", 112 } }),
+        /* 3  Rap Lead Clean */ mk ({ { "revMix", 12 }, { "dlyMix", 6 }, { "width", 125 } }),
         /* 4  Rap Lead Aggressive */ mk ({ { "compThr", -31 }, { "compRatio", 6 }, { "compAtk", 4 }, { "compRel", 70 }, { "compMakeup", 16 }, { "comp2Amt", 60 }, { "compWarm", 42 },
                                         { "lmG", -4 }, { "hmG", 4 }, { "satDrive", 40 }, { "deessAmt", 62 }, { "deessRange", 14 }, { "revMix", 6 }, { "dlyMix", 4 }, { "width", 105 } }),
         /* 5  Trap Vocal */ mk ({ { "hpOn", 1 }, { "hpFreq", 110 }, { "lmF", 330 }, { "lmG", -4 }, { "hmF", 3500 }, { "hmG", 3.5f },
