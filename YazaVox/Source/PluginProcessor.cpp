@@ -192,7 +192,7 @@ void YazaVoxProcessor::applyPreset (int index)
         { "fxOn", 1 }, { "deessOn", 1 }, { "deessFreq", 7000 }, { "deessHigh", 14000 }, { "deessAmt", 55 }, { "deessRange", 12 }, { "deessMode", 0 }, { "deessBand", 0 },
         { "satOn", 1 }, { "satDrive", 22 }, { "satTone", 8 }, { "satMix", 70 },
         { "widthOn", 1 }, { "width", 129 },
-        { "dlyOn", 1 }, { "dlyMix", 8 }, { "dlyNote", 1 }, { "dlyFb", 25 }, { "dlyHP", 250 }, { "dlyLP", 6000 }, { "dlyDuck", 75 }, { "dlyPing", 1 },
+        { "dlyOn", 1 }, { "dlyMix", 8 }, { "dlyNote", 1 }, { "dlyFb", 68 }, { "dlyHP", 20 }, { "dlyLP", 20000 }, { "dlyDuck", 100 }, { "dlyPing", 0 },   // calibre sur un Fruity Delay 3 (1/8, feedback ~68 %, ducking sidechain voix)
         { "revOn", 1 }, { "revMode", 1 }, { "revDecay", 1.07f }, { "revPre", 0 }, { "revSize", 6 }, { "revDiff", 92 }, { "revMod", 0 },
         { "revMix", 20 }, { "revDamp", 65 }, { "revLow", 86 }, { "revHigh", 18400 }, { "revBass", 118 }, { "revDuck", 0 }, { "revWidth", 100 }
     };
