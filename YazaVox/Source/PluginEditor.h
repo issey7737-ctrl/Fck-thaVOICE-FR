@@ -292,7 +292,7 @@ private:
     AmberKnob *inKnob = nullptr, *outKnob = nullptr, *limKnob = nullptr;
     std::vector<Row> rows;
 
-    float inLvl = 0.f, outLvl = 0.f, phase = 0.f, inHold = 0.f, shownOut = -1.f;
+    float inLvl = 0.f, outLvl = 0.f, phase = 0.f, inHold = 0.f, shownOut = -1.f; int orbTick = 0;
     bool syncing = false, measuring = false;
     int measureFrames = 0;
     float measurePk = 0.f;

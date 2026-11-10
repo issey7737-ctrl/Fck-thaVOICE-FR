@@ -1015,10 +1015,14 @@ void SimpleView::pushLevels (float inPk, float outPk)
         }
     }
     autoTick (proc, autoVoice, presets, autoShow);
-    if (std::abs (outLvl - shownOut) > 0.004f || outLvl > 0.02f || measuring)
+    // trois petites zones separees (barre IN, barre OUT, orbe) au lieu d'un grand rectangle qui les englobe : bien moins de pixels a redessiner
+    const bool moved = std::abs (outLvl - shownOut) > 0.004f || outLvl > 0.02f || measuring;
+    if (moved)
     {
         shownOut = outLvl;
-        repaint (orbArea.getUnion (inBar.getUnion (outBar)).expanded (50));
+        repaint (inBar.expanded (72, 44));
+        repaint (outBar.expanded (10, 20));
+        if ((++orbTick & 1) == 0) repaint (orbArea.expanded (50));    // l'orbe n'est animee qu'a ~8 images/s
     }
 }
 
