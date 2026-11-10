@@ -55,8 +55,21 @@ public:
     juce::AudioProcessorValueTreeState apvts;
     yv::Engine engine;
     std::atomic<bool> uiSimple { true };
+    void refreshLatency() { latUpd.trigger(); }
 
 private:
+    struct LatUpd : juce::AsyncUpdater
+    {
+        explicit LatUpd (YazaVoxProcessor& o) : owner (o) {}
+        void trigger() { triggerAsyncUpdate(); }
+        void handleAsyncUpdate() override
+        {
+            owner.setLatencySamples (owner.engine.latency());
+            owner.updateHostDisplay (juce::AudioProcessorListener::ChangeDetails().withLatencyChanged (true));
+        }
+        YazaVoxProcessor& owner;
+    } latUpd { *this };
+    int reportedLat = -1;
     void handleAsyncUpdate() override;
     yv::VoiceAnalyzer analyzer;
     juce::CriticalSection autoLock;

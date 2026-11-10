@@ -43,10 +43,13 @@ bool YazaVoxProcessor::isBusesLayoutSupported (const BusesLayout& l) const
 void YazaVoxProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
     sr = sampleRate;
+    for (int i = 0; i < Count; ++i) cur[(size_t) i] = raw[(size_t) i]->load();
+    engine.setParams (cur.data());
     engine.prepare (sampleRate, samplesPerBlock);
     analyzer.prepare (sampleRate);
     scratch.setSize (2, std::max (samplesPerBlock, 16384), false, true, false);   // alloue ici, jamais dans le callback
-    setLatencySamples (engine.latency());   // seule l'autotune introduit une latence fixe (le dry du bypass est retarde pareil)
+    setLatencySamples (engine.latency());   // 0 ms sans autotune ; avec autotune ~20 ms (le dry du bypass est retarde pareil)
+    reportedLat = engine.latency();
 }
 
 void YazaVoxProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
@@ -57,6 +60,7 @@ void YazaVoxProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mid
 
     for (int i = 0; i < Count; ++i) cur[(size_t) i] = raw[(size_t) i]->load();
     engine.setParams (cur.data());
+    if (engine.latency() != reportedLat) { reportedLat = engine.latency(); latUpd.trigger(); }
 
     double bpm = 120.0;
     if (auto* ph = getPlayHead())
