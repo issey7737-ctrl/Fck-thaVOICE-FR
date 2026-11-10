@@ -1515,6 +1515,13 @@ void YazaVoxEditor::selectPreset (int i)
     presets.setSelectedItemIndex (proc.getCurrentPreset(), juce::dontSendNotification);
 }
 
+// Rendu logiciel : le moteur Direct2D de JUCE 8 fige certains hotes (FL Studio) quand plusieurs fenetres de plugin sont ouvertes,
+// et pese plus lourd que necessaire pour cette interface.
+void YazaVoxEditor::parentHierarchyChanged()
+{
+    if (auto* peer = getPeer()) peer->setCurrentRenderingEngine (0);
+}
+
 void YazaVoxEditor::timerCallback()
 {
     const float inP = proc.engine.inPk.exchange (0.f), outP = proc.engine.outPk.exchange (0.f);
