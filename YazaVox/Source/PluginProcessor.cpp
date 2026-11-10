@@ -187,8 +187,8 @@ void YazaVoxProcessor::applyPreset (int index)
         { "eqOn", 1 }, { "hpOn", 1 }, { "hpFreq", 100 }, { "lsF", 120 }, { "lsG", -2.0f }, { "lsQ", 0.7f },
         { "lmF", 320 }, { "lmG", -4.5f }, { "lmQ", 1.1f }, { "hmF", 3500 }, { "hmG", 3.5f }, { "hmQ", 0.9f }, { "hsF", 10000 }, { "hsG", 3.5f },
         { "airOn", 1 }, { "airMid", 32 }, { "airHigh", 28 },
-        { "compOn", 1 }, { "compThr", -28 }, { "compRatio", 5 }, { "compAtk", 6 }, { "compRel", 80 }, { "compKnee", 8 }, { "compMakeup", 14 },
-        { "comp2On", 1 }, { "comp2Amt", 45 }, { "compWarm", 30 },
+        { "compOn", 1 }, { "compThr", -24.6f }, { "compRatio", 3.9f }, { "compAtk", 1.7f }, { "compRel", 10 }, { "compKnee", 23 }, { "compMakeup", 11 },
+        { "comp2On", 1 }, { "comp2Amt", 43 }, { "compWarm", 30 },   // reglages mesures sur un compresseur vocal de reference (Pro-C 2, style Vocal)
         { "fxOn", 1 }, { "deessOn", 1 }, { "deessFreq", 7000 }, { "deessHigh", 14000 }, { "deessAmt", 55 }, { "deessRange", 12 }, { "deessMode", 0 }, { "deessBand", 0 },
         { "satOn", 1 }, { "satDrive", 22 }, { "satTone", 8 }, { "satMix", 70 },
         { "widthOn", 1 }, { "width", 118 },
@@ -203,7 +203,7 @@ void YazaVoxProcessor::applyPreset (int index)
 
     static const std::vector<VV> presets = {
         /* 0  Init */ {},
-        /* 3  Rap Lead Clean */ mk ({ { "compThr", -28 }, { "revMix", 3 }, { "dlyMix", 6 }, { "width", 112 } }),
+        /* 3  Rap Lead Clean */ mk ({ { "revMix", 3 }, { "dlyMix", 6 }, { "width", 112 } }),
         /* 4  Rap Lead Aggressive */ mk ({ { "compThr", -31 }, { "compRatio", 6 }, { "compAtk", 4 }, { "compRel", 70 }, { "compMakeup", 16 }, { "comp2Amt", 60 }, { "compWarm", 42 },
                                         { "lmG", -4 }, { "hmG", 4 }, { "satDrive", 40 }, { "deessAmt", 62 }, { "deessRange", 14 }, { "revMix", 2 }, { "dlyMix", 4 }, { "width", 105 } }),
         /* 5  Trap Vocal */ mk ({ { "hpFreq", 110 }, { "lsG", -3 }, { "lmF", 330 }, { "lmG", -4 }, { "hmF", 3500 }, { "hmG", 3.5f }, { "hsG", 2.5f }, { "airHigh", 12 },
@@ -244,7 +244,7 @@ void YazaVoxProcessor::applyPreset (int index)
                                      { "satDrive", 10 }, { "dlyMix", 0 }, { "revMix", 6 }, { "revMode", 0 }, { "revDecay", 0.7f }, { "width", 105 } }),
         /* 23 Airy Vocal */ mk ({ { "lmG", -3 }, { "hmG", 2 }, { "hsF", 12000 }, { "hsG", 5 }, { "airMid", 34 }, { "airHigh", 28 }, { "deessAmt", 62 }, { "satDrive", 10 },
                                   { "choOn", 1 }, { "choMix", 12 }, { "dlyMix", 14 }, { "revMix", 18 }, { "revDecay", 2.2f }, { "revMode", 1 }, { "width", 130 } }),
-        /* 24 Professional Lead */ mk ({ { "compThr", -28 }, { "revMix", 7 }, { "dlyMix", 8 } }),
+        /* 24 Professional Lead */ mk ({ { "revMix", 7 }, { "dlyMix", 8 } }),
         /* 25 Soft Compression */ mk ({ { "compThr", -23 }, { "compRatio", 2 }, { "compAtk", 25 }, { "compRel", 200 }, { "compKnee", 14 }, { "compMakeup", 11 }, { "comp2On", 0 }, { "revMix", 4 } }),
         /* 26 Hard Compression */ mk ({ { "compThr", -36 }, { "compRatio", 10 }, { "compAtk", 2 }, { "compRel", 60 }, { "compKnee", 2 }, { "compMakeup", 21 }, { "comp2Amt", 80 }, { "compMix", 85 }, { "revMix", 3 } })
     };
