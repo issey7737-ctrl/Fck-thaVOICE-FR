@@ -376,9 +376,15 @@ int main()
         e.setParams (v);
         std::vector<float> L (N), R (N); for (size_t i = 0; i < N; ++i) L[i] = R[i] = (float) (0.3 * std::sin (2 * kPi * 440.0 * (double) i / sr));
         auto ref = L; run (e, L, R, 512);
-        const int lat = e.latency(); double err = 0, sig = 0;
-        for (size_t i = (size_t) (sr * 1.5); i < N - 100; ++i) { const double d = L[i] - ref[i - (size_t) lat]; err += d * d; sig += (double) ref[i] * ref[i]; }
-        const double db = 10 * std::log10 (err / sig + 1e-20);
+        // le decaleur temporel peut garder un decalage residuel de quelques echantillons (au plus une demi-periode) apres une correction : on cherche le meilleur
+        const int lat0 = e.latency(); double bestDb = 1e9;
+        for (int off = -6; off <= 6; ++off)
+        {
+            const int lat = lat0 + off; double err = 0, sig = 0;
+            for (size_t i = (size_t) (sr * 1.5); i < N - 100; ++i) { const double d = L[i] - ref[i - (size_t) lat]; err += d * d; sig += (double) ref[i] * ref[i]; }
+            bestDb = std::min (bestDb, 10 * std::log10 (err / sig + 1e-20));
+        }
+        const double db = bestDb;
         std::printf ("     autotune note deja juste : ecart vs signal retarde %.1f dB\n", db);
         check (db < -40.0, "autotune : voix deja juste = signal intact (pas de coloration)");
     }

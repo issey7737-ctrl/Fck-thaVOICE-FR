@@ -7,7 +7,6 @@
 #include <cmath>
 #include <vector>
 #include "YvParams.h"
-#include "signalsmith-stretch.h"   // MIT, voir third_party/
 
 // ThaVOICE : algorithmes originaux (aucun code tiers). Tout est en double precision, sans allocation dans process().
 
@@ -1084,20 +1083,19 @@ public:
     void prepare (double fs)
     {
         sr = fs;
-        st.configure (1, (int) (fs * kBlockS), (int) (fs * kIntS), false);
-        st.reset();
-#ifndef TUNE_PRE_S
-#define TUNE_PRE_S 0.0
-#endif
-        pre = (int) std::lround (TUNE_PRE_S * fs);
-        lat = st.inputLatency() + st.outputLatency() + pre;
-        dryL.init (lat + 8); dryR.init (lat + 8); preD.init (pre + 8); preD.clear();
+        // decaleur temporel a synchronisation de periode (type PSOLA/harmoniseur) : la forme d'onde de la voix est conservee,
+        // seul le pas de lecture change ; on saute d'une periode (raccord correle) quand la lecture derive. Pas de phasiness ni d'effet chorus.
+        dNom = std::round (kDelayS * fs);
+        lat = (int) dNom;
+        for (auto& x : bufL) x = 0.f;
+        for (auto& x : bufR) x = 0.f;
+        wpos = 0; pA = pB = -dNom; xf = false; xfPos = xfLen = 0; cool = 0; periodS = 0;
         D = std::max (1, (int) std::lround (fs / 12000.0));
         fsd = fs / (double) D;
         std::fill (dec.begin(), dec.end(), 0.f);
         decPos = 0; decCnt = 0; acc = 0; hop = 0;
         corr = corrTarget = 0; voiced = false; hadCenter = false; heldHops = 0; unvoicedHops = 99; lastTarget = -1; nHist = 0; hist[0] = hist[1] = hist[2] = 0;
-        mixT = 0; gate = 0; absSm = 0; ctPos = 0; for (auto& c : ctRing) c = 0;
+        ctPos = 0; for (auto& c : ctRing) c = 0;
 #ifndef TUNE_CORR_DELAY_S
 #define TUNE_CORR_DELAY_S 0.0
 #endif
@@ -1148,47 +1146,76 @@ public:
             const double held = (double) heldHops * (80.0 * D / sr);
             const double tauEff = tau + human * 0.15 * clampd ((held - 0.10) / 0.30, 0.0, 1.0);
             const double a = (on && voiced) ? (tauEff < 1e-4 ? 1.0 : 1.0 - std::exp (-(double) len / (tauEff * sr))) : 1.0 - std::exp (-(double) len / (0.05 * sr));
-            st.setFormantFactor (1.0f, formant);
-            // la mesure de hauteur date d'environ 25 ms ; on retarde la consigne pour l'aligner sur l'audio que le shifter traite
             ctRing[(size_t) (ctPos & 255)] = corrTarget; ++ctPos;
             const double ctUse = ctRing[(size_t) ((ctPos - 1 - ctDelay) & 255)];
             corr += (ctUse - corr) * a;
-            st.setTransposeFactor ((float) std::exp2 (corr / 12.0));
+            // sans correction, le retard revient tout doucement a sa valeur nominale (au plus 0,7 cent de derive : inaudible)
+            const double dErr = (double) wpos - pA - dNom;
+            const double rate = std::exp2 (corr / 12.0) * (1.0 + clampd (dErr * 1e-4, -4e-4, 4e-4) * (1.0 - clampd (std::abs (corr) / 0.05, 0.0, 1.0)));
 
-            // la voix est traitee en mono (M) : une source mono reste mono ; le cote (S) est seulement retarde
-            for (int i = 0; i < len; ++i) { preD.write (0.5 * ((double) pl[i] + (double) pr[i])); midIn[(size_t) i] = (float) preD.read ((double) pre); }
-            const float* inP[1] = { midIn.data() };
-            float* outP[1] = { wetL.data() };
-            st.process (inP, len, outP, len);
-
-            const double mixStep = (double) len / (0.05 * sr);
-            mixT = on ? std::min (1.0, mixT + mixStep) : std::max (0.0, mixT - mixStep);
-            // "que la correction" : quand la voix est deja juste, on laisse passer le signal d'origine (aucune coloration du shifter) ;
-            // le signal corrige n'intervient que lorsqu'une correction audible est appliquee
-            absSm += (std::abs (corr) - absSm) * (1.0 - std::exp (-(double) len / (0.06 * sr)));
-            if (absSm > 0.06) gateOn = true; else if (absSm < 0.025) gateOn = false;
-            const double gStep = (double) len / (0.03 * sr);
-            gate = gateOn ? std::min (1.0, gate + gStep) : std::max (0.0, gate - gStep);
-            const double mixW = mixT * gate;
             for (int i = 0; i < len; ++i)
             {
-                dryL.write (pl[i]); dryR.write (pr[i]);
-                const double dl = dryL.read ((double) lat), dr = dryR.read ((double) lat);
-                const double mid = 0.5 * (dl + dr), side = 0.5 * (dl - dr);
-                const double w = mid + ((double) wetL[(size_t) i] - mid) * mixW;
-                pl[i] = (float) (w + side);
-                pr[i] = (float) (w - side);
+                bufL[(size_t) (wpos & kMask)] = pl[i]; bufR[(size_t) (wpos & kMask)] = pr[i];
+                ++wpos;
+                double yl = rd (bufL, pA), yr = rd (bufR, pA);
+                if (xf)
+                {
+                    const double g = 0.5 - 0.5 * std::cos (kPi * (double) xfPos / (double) xfLen);
+                    yl += (rd (bufL, pB) - yl) * g; yr += (rd (bufR, pB) - yr) * g;
+                    pB += rate; pA += rate;
+                    if (++xfPos >= xfLen) { pA = pB; xf = false; }
+                }
+                else pA += rate;
+                pl[i] = (float) yl; pr[i] = (float) yr;
+                if (! xf && periodS > 0.0) { if (cool > 0) --cool; else maybeSplice(); }
             }
         }
     }
 
 private:
-    static constexpr int kDec = 4096, kTauMax = 260, kWin = 512, kChunk = 64;
-#ifndef TUNE_BLOCK_S
-#define TUNE_BLOCK_S 0.09
-#define TUNE_INT_S 0.0225
+    static constexpr int kDec = 4096, kTauMax = 260, kWin = 512, kChunk = 64, kBuf = 16384, kMask = kBuf - 1;
+#ifndef TUNE_DELAY_S
+#define TUNE_DELAY_S 0.046
 #endif
-    static constexpr double kBlockS = TUNE_BLOCK_S, kIntS = TUNE_INT_S;
+    static constexpr double kDelayS = TUNE_DELAY_S;
+
+    // lecture interpolee (Hermite) a la position (negative = relative au debut) 
+    static inline double rd (const std::array<float, kBuf>& b, double p) noexcept
+    {
+        const double fl = std::floor (p); const double t = p - fl; const long i = (long) fl;
+        const double y0 = b[(size_t) ((i - 1) & kMask)], y1 = b[(size_t) (i & kMask)], y2 = b[(size_t) ((i + 1) & kMask)], y3 = b[(size_t) ((i + 2) & kMask)];
+        const double c1 = 0.5 * (y2 - y0), c2 = y0 - 2.5 * y1 + 2.0 * y2 - 0.5 * y3, c3 = 0.5 * (y3 - y0) + 1.5 * (y1 - y2);
+        return ((c3 * t + c2) * t + c1) * t + y1;
+    }
+    inline double mono (long i) const noexcept { return 0.5 * ((double) bufL[(size_t) (i & kMask)] + (double) bufR[(size_t) (i & kMask)]); }
+
+    // la lecture derive par rapport a l'ecriture (rapport de lecture != 1) : quand l'ecart au retard nominal depasse une demi-periode,
+    // on saute d'une periode (en avant ou en arriere) vers le point le mieux correle, avec un fondu enchaine
+    void maybeSplice() noexcept
+    {
+        const double d = (double) wpos - 1.0 - pA;
+        const double T = periodS, half = 0.5 * T;
+        if (d >= dNom - half && d <= dNom + half) return;
+        const int dir = d < dNom ? 1 : -1;               // +1 : on recule (le retard augmente)
+        int L = (int) clampd (T, 96.0, 400.0);
+        const long base = (long) std::floor (pA);
+        const int dl = (int) std::floor (0.2 * T);
+        double bestS = -2; int bestK = 0;
+        double ex = 0; for (int k = 0; k < L; ++k) { const double x = mono (base + k); ex += x * x; }
+        for (int dk = -dl; dk <= dl; ++dk)
+        {
+            const long q = base - (long) dir * (long) std::lround (T) + dk;
+            if (q + L >= wpos || q < wpos - kBuf + 1024) continue;
+            double s = 0, eq = 0;
+            for (int k = 0; k < L; ++k) { const double y = mono (q + k); s += mono (base + k) * y; eq += y * y; }
+            const double sc = s / std::sqrt (ex * eq + 1e-12);
+            if (sc > bestS) { bestS = sc; bestK = dk; }
+        }
+        if (bestS < 0.3 && std::abs (d - dNom) < 0.9 * T) { cool = 48; return; }
+        if (bestS < -1) { cool = 48; return; }
+        pB = pA - (double) dir * (double) std::lround (T) + (double) bestK;
+        xf = true; xfPos = 0; xfLen = L;
+    }
 
     void analyse() noexcept
     {
@@ -1258,14 +1285,15 @@ private:
             // Flex-Tune : on ne tire la note que lorsqu'elle approche de la cible (les glissandos lointains sont preserves)
             const double err = (double) bn - m;
             const double w = flex <= 0.0 ? 1.0 : clampd (1.0 - flex * (std::abs (err) - 0.25) / 0.25, 0.0, 1.0);
-            corrTarget = clampd (amount * (w * err + vibAmt * (m - centre)), -6.0, 6.0);
-            if (formant) st.setFormantBase ((float) f0);
+            const double errK = clampd ((std::abs (err) - 0.03) / 0.05, 0.0, 1.0);   // zone morte ~3 cents : une voix deja juste n'est pas touchee (pas de derive du decaleur)
+            corrTarget = clampd (amount * (w * err * errK + vibAmt * (m - centre)), -6.0, 6.0);
+            periodS = sr / f0;
             detMidi.store ((float) m); tgtMidi.store ((float) bn);
         }
         else
         {
             nHist = 0;
-            if (++unvoicedHops >= 4) { voiced = false; hadCenter = false; heldHops = 0; corrTarget = 0; lastTarget = -1; detMidi.store (0.f); tgtMidi.store (0.f); }
+            if (++unvoicedHops >= 4) { voiced = false; periodS = 0; hadCenter = false; heldHops = 0; corrTarget = 0; lastTarget = -1; detMidi.store (0.f); tgtMidi.store (0.f); }
         }
     }
 
@@ -1280,12 +1308,11 @@ private:
     std::array<float, kDec> dec {};
     std::array<double, kWin + kTauMax + 4> frame {};
     std::array<double, kTauMax + 4> cm {};
-    std::array<float, kChunk> wetL {}, midIn {};
-    signalsmith::stretch::SignalsmithStretch<float> st;
-    Delay dryL, dryR, preD;
-    int pre = 0;
+    std::array<float, kBuf> bufL {}, bufR {};
+    long wpos = 0; double pA = 0, pB = 0, dNom = 1056, periodS = 0; bool xf = false; int xfPos = 0, xfLen = 0, cool = 0;
 };
 
+//==============================================================================
 // LIMITEUR de sortie : anticipation 1,5 ms (garantit de ne jamais depasser le plafond), relachement automatique, stereo lie.
 class Limiter
 {
