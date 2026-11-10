@@ -1327,22 +1327,36 @@ private:
 };
 
 //==============================================================================
-// LIMITEUR de sortie : latence nulle (attaque instantanee sur le pic, relachement automatique), stereo lie. Ne depasse jamais le plafond.
+// LIMITEUR de sortie : latence nulle. Le gain descend vite (attaque ~0,4 ms, sans clic) puis remonte lentement ; les quelques
+// echantillons qui depassent avant que le gain ait fini de descendre sont arrondis par un ecretage doux (pas de cassure = pas de crepitement).
 class Limiter
 {
 public:
-    void prepare (double fs) { env = 1.0; relC = 1.0 - std::exp (-1.0 / (0.08 * fs)); }
+    void prepare (double fs)
+    {
+        env = 1.0;
+        relC = 1.0 - std::exp (-1.0 / (0.12 * fs));
+        atkC = 1.0 - std::exp (-1.0 / (0.0004 * fs));
+    }
     int latency() const noexcept { return 0; }
     void setCeiling (double dB) { ceil = dbToLin (clampd (dB, -12.0, 0.0)); }
     inline void process (double& l, double& r) noexcept
     {
         const double peak = std::max (std::abs (l), std::abs (r));
-        const double req = peak > ceil ? ceil / peak : 1.0;
-        env = req < env ? req : env + (req - env) * relC;
-        l *= env; r *= env;
+        const double req = peak > ceil * 0.95 ? ceil * 0.95 / peak : 1.0;
+        env += (req - env) * (req < env ? atkC : relC);
+        l = soft (l * env); r = soft (r * env);
     }
 private:
-    double ceil = 0.89, env = 1.0, relC = 0.001;
+    // transparent jusqu'a 90 % du plafond, puis arrondi progressif qui n'atteint jamais le plafond
+    inline double soft (double x) const noexcept
+    {
+        const double a = std::abs (x), k = 0.9 * ceil;
+        if (a <= k) return x;
+        const double y = k + (ceil - k) * std::tanh ((a - k) / (ceil - k));
+        return x < 0 ? -y : y;
+    }
+    double ceil = 0.89, env = 1.0, relC = 0.001, atkC = 0.05;
 };
 
 //==============================================================================

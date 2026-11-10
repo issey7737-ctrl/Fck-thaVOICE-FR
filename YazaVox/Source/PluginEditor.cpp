@@ -225,9 +225,9 @@ void LevelMeter::push (float pk)
 {
     const float db = (float) linToDb (pk);
     const float v = juce::jlimit (0.f, 1.f, (db + 60.f) / 63.f);
-    level = v > level ? v : level - (level - v) * 0.18f;
-    if (v >= hold) { hold = v; holdCount = 45; } else if (--holdCount < 0) hold = std::max (0.f, hold - 0.02f);
-    if (pk >= 0.995f) clipCount = 60; else if (clipCount > 0) --clipCount;
+    level = v > level ? v : level - (level - v) * 0.33f;
+    if (v >= hold) { hold = v; holdCount = 23; } else if (--holdCount < 0) hold = std::max (0.f, hold - 0.04f);
+    if (pk >= 0.995f) clipCount = 30; else if (clipCount > 0) --clipCount;
     repaint();
 }
 void LevelMeter::paint (juce::Graphics& g)
@@ -1341,7 +1341,7 @@ DsMini::DsMini (YazaVoxProcessor& p)
     thr = std::make_unique<KnobCell> (p, deessAmt);
     rng = std::make_unique<KnobCell> (p, deessRange);
     for (auto* c : { (juce::Component*) thr.get(), (juce::Component*) rng.get(), (juce::Component*) &mode, (juce::Component*) &band, (juce::Component*) &bar, (juce::Component*) &listen }) addAndMakeVisible (*c);
-    startTimerHz (30);
+    startTimerHz (15);
 }
 
 void DsMini::resized()
@@ -1492,7 +1492,7 @@ YazaVoxEditor::YazaVoxEditor (YazaVoxProcessor& p)
     setResizeLimits (900, 600, 1900, 1200);
     getConstrainer()->setFixedAspectRatio (0.0);
     setSize (1180, 740);
-    startTimerHz (30);
+    startTimerHz (15);
 }
 
 YazaVoxEditor::~YazaVoxEditor()
