@@ -533,8 +533,8 @@ public:
             shelfMid = mid; shelfHigh = high;
             for (auto& c : ch)
             {
-                c.peak.peaking (sr, 6500.0, 0.7, 3.5 * mid);
-                c.shelf.highShelf (sr, std::min (12000.0, 0.45 * sr), 0.6, 5.0 * high);
+                c.peak.peaking (sr, 5161.0, 1.37, 3.85 * std::pow (mid, 0.8));       // courbe mesuree sur un Air de reference (Mid 26 / High 6)
+                c.shelf.highShelf (sr, std::min (9051.0, 0.45 * sr), 0.63, 9.7 * std::pow (high, 0.3));
             }
         }
     }
