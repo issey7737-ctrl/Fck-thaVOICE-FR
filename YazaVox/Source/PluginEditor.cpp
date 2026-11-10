@@ -931,7 +931,7 @@ SimpleView::SimpleView (YazaVoxProcessor& p, std::function<void()> pro) : proc (
     lowCut.setClickingTogglesState (true);
     addAndMakeVisible (lowCut);
     lowCutAtt = std::make_unique<ButtonAtt> (p.apvts, "hpOn", lowCut);
-    autoIn.onClick = [this] { measuring = true; measureFrames = 90; measurePk = 0.f; autoIn.setButtonText ("Listening..."); };
+    autoIn.onClick = [this] { measuring = true; measureFrames = 45; measurePk = 0.f; autoIn.setButtonText ("Listening..."); };
     prevBtn.onClick = [this] { const int n = YazaVoxProcessor::presetNames().size(); selectPreset ((proc.getCurrentPreset() + n - 1) % n); };
     nextBtn.onClick = [this] { selectPreset ((proc.getCurrentPreset() + 1) % YazaVoxProcessor::presetNames().size()); };
     proBtn.onClick = [this] { if (onPro) onPro(); };
@@ -1011,7 +1011,7 @@ void SimpleView::pushLevels (float inPk, float outPk)
             measuring = false;
             autoIn.setButtonText ("Auto input");
             if (measurePk > 1e-4f)
-                setReal (proc, inGain, juce::jlimit (-18.f, 18.f, -9.f - (float) linToDb (measurePk)));   // pic cale a -9 dBFS
+                setReal (proc, inGain, juce::jlimit (-18.f, 18.f, proc.getParam (inGain) + (-13.5f - (float) linToDb (measurePk))));   // la mesure est faite apres IN : on corrige a partir du reglage actuel, pic vise au milieu de la zone cible   // pic cale a -9 dBFS
         }
     }
     autoTick (proc, autoVoice, presets, autoShow);

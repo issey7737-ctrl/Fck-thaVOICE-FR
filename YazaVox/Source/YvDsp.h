@@ -1411,13 +1411,13 @@ public:
         {
             const double ig = ig0 + (inTarget - ig0) * (double) (i + 1) / (double) n;
             tmpL[(size_t) i] = (float) (l[i] * ig); tmpR[(size_t) i] = (float) (r[i] * ig);
+            pkIn = std::max (pkIn, std::max (std::abs ((double) tmpL[(size_t) i]), std::abs ((double) tmpR[(size_t) i])));   // niveau APRES le bouton IN : la barre bouge quand on tourne IN
         }
         tune.processBlock (tmpL.data(), tmpR.data(), n);
 
         for (int i = 0; i < n; ++i)
         {
             const double dryL = l[i], dryR = r[i];
-            pkIn = std::max (pkIn, std::max (std::abs (dryL), std::abs (dryR)));
             const double f = (double) (i + 1) / (double) n;
             for (int k = 0; k < kRamps; ++k)
             {
