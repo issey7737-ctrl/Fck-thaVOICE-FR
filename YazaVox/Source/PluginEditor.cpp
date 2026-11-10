@@ -228,7 +228,13 @@ void LevelMeter::push (float pk)
     level = v > level ? v : level - (level - v) * 0.33f;
     if (v >= hold) { hold = v; holdCount = 23; } else if (--holdCount < 0) hold = std::max (0.f, hold - 0.04f);
     if (pk >= 0.995f) clipCount = 30; else if (clipCount > 0) --clipCount;
-    repaint();
+    // on ne redessine que si quelque chose a visiblement change (interface en rendu logiciel : chaque dessin coute du CPU)
+    const bool clip = clipCount > 0;
+    if (std::abs (level - shownLevel) > 0.004f || std::abs (hold - shownHold) > 0.004f || clip != shownClip)
+    {
+        shownLevel = level; shownHold = hold; shownClip = clip;
+        repaint();
+    }
 }
 void LevelMeter::paint (juce::Graphics& g)
 {
@@ -262,7 +268,7 @@ void GrMeter::push (float grDb)
 {
     const float target = juce::jlimit (0.f, 24.f, -grDb);
     gr = target > gr ? target : gr - (gr - target) * 0.2f;
-    repaint();
+    if (std::abs (gr - shownGr) > 0.05f) { shownGr = gr; repaint(); }
 }
 void GrMeter::paint (juce::Graphics& g)
 {
@@ -902,6 +908,7 @@ void AmberKnob::refresh()
 SimpleView::SimpleView (YazaVoxProcessor& p, std::function<void()> pro) : proc (p), onPro (std::move (pro))
 {
     setLookAndFeel (&laf);
+    setOpaque (true);   // le fond est entierement opaque : evite de redessiner la fenetre parente a chaque rafraichissement
     auto add = [this] (auto* c) { owned.emplace_back (c); addAndMakeVisible (*owned.back()); return c; };
 
     // grand bouton COMP (macro : seuil, ratio, gain de compensation, etage 2)
@@ -1008,7 +1015,11 @@ void SimpleView::pushLevels (float inPk, float outPk)
         }
     }
     autoTick (proc, autoVoice, presets, autoShow);
-    repaint (orbArea.getUnion (inBar.getUnion (outBar)).expanded (50));
+    if (std::abs (outLvl - shownOut) > 0.004f || outLvl > 0.02f || measuring)
+    {
+        shownOut = outLvl;
+        repaint (orbArea.getUnion (inBar.getUnion (outBar)).expanded (50));
+    }
 }
 
 void SimpleView::refresh()
