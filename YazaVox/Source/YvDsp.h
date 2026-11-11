@@ -1075,11 +1075,20 @@ private:
 // AUTOTUNE : detection de hauteur (YIN sur signal decime) + correction vers la gamme choisie.
 // Le decalage de hauteur est fait par Signalsmith Stretch (MIT, https://github.com/Signalsmith-Audio/signalsmith-stretch),
 // un decaleur a vocodeur de phase de haute qualite : pas de clic ni de battement. Latence fixe, declaree a l'hote.
+#ifndef TUNE_GATE_REL
+#define TUNE_GATE_REL 0
+#endif
+#ifndef TUNE_EMAX_DECAY
+#define TUNE_EMAX_DECAY 0.9985
+#endif
+#ifndef TUNE_WEAK_MAX
+#define TUNE_WEAK_MAX 0.3
+#endif
 #ifndef TUNE_WIN
-#define TUNE_WIN 192
+#define TUNE_WIN 512
 #endif
 #ifndef TUNE_HOP
-#define TUNE_HOP 40
+#define TUNE_HOP 80
 #endif
 class Tune
 {
@@ -1095,7 +1104,7 @@ public:
         lat = (int) dNom;
         for (auto& x : bufL) x = 0.f;
         for (auto& x : bufR) x = 0.f;
-        wpos = 0; pA = pB = -dNom; xf = false; xfPos = xfLen = 0; cool = 0; periodS = 0;
+        wpos = 0; pA = pB = -dNom; xf = false; xfPos = xfLen = 0; cool = 0; periodS = 0; eMax = 0;
         D = std::max (1, (int) std::lround (fs / 12000.0));
         fsd = fs / (double) D;
         std::fill (dec.begin(), dec.end(), 0.f);
@@ -1189,7 +1198,7 @@ public:
 private:
     static constexpr int kDec = 4096, kTauMax = 260, kWin = TUNE_WIN, kChunk = 64, kBuf = 16384, kMask = kBuf - 1;
 #ifndef TUNE_DELAY_S
-#define TUNE_DELAY_S 0.020
+#define TUNE_DELAY_S 0.046
 #endif
     static constexpr double kDelayS = TUNE_DELAY_S;
 
@@ -1241,8 +1250,9 @@ private:
             frame[(size_t) i] = x; if (i < kWin) e += x * x;
         }
         e /= kWin;
+        eMax = std::max (e, eMax * TUNE_EMAX_DECAY);                  // niveau de voix recent : le bruit de fond (meme amplifie par IN) n'est pas une voix
         double f0 = 0;
-        if (e > 2e-6)
+        if (e > 2e-6 && e > eMax * TUNE_GATE_REL)
         {
             double run = 0;
             cm[0] = 1.0;
@@ -1258,7 +1268,7 @@ private:
                 if (cm[(size_t) t] < 0.15 && cm[(size_t) t] <= cm[(size_t) (t + 1)]) { best = t; break; }
             if (best < 0)
             {
-                double m = 0.3;
+                double m = TUNE_WEAK_MAX;
                 for (int t = tauMin; t < tauMax; ++t) if (cm[(size_t) t] < m) { m = cm[(size_t) t]; best = t; }
             }
             if (best > 1)
@@ -1311,7 +1321,7 @@ private:
         }
     }
 
-    double sr = 48000, fsd = 12000, corr = 0, corrTarget = 0, amount = 1, acc = 0, tau = 0.02, mixT = 0, human = 0, flex = 0, vibAmt = 0, centre = 0;
+    double sr = 48000, fsd = 12000, corr = 0, corrTarget = 0, amount = 1, acc = 0, tau = 0.02, mixT = 0, human = 0, flex = 0, vibAmt = 0, centre = 0, eMax = 0;
     int heldHops = 0;
     double gate = 0, absSm = 0; bool gateOn = false;
     double ctRing[256] {}; int ctPos = 0, ctDelay = 0;
