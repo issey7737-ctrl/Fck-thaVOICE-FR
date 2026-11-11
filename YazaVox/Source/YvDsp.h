@@ -1379,6 +1379,7 @@ public:
         sr = sampleRate;
         tmpL.assign (16384, 0.f); tmpR.assign (16384, 0.f);
         comp.prepare (sr); eq.prepare (sr); des.prepare (sr); air.prepare (sr); wdr.prepare (sr); sat.prepare (sr); dbl.prepare (sr); cho.prepare (sr);
+        for (auto& b : dcIn) { b.highPass (sr, 22.0, 0.7071); b.reset(); } for (auto& b : dcOut) { b.highPass (sr, 18.0, 0.7071); b.reset(); }
         phn.prepare (sr); dly.prepare (sr); rev.prepare (sr); tune.prepare (sr); lim.prepare (sr);
         dryLine[0].init (tune.nominalLatency() + 8); dryLine[1].init (tune.nominalLatency() + 8);
         rampStep = 1.0 / (0.02 * sr);
@@ -1410,7 +1411,8 @@ public:
         for (int i = 0; i < n; ++i)
         {
             const double ig = ig0 + (inTarget - ig0) * (double) (i + 1) / (double) n;
-            tmpL[(size_t) i] = (float) (l[i] * ig); tmpR[(size_t) i] = (float) (r[i] * ig);
+            // filtre anti-infragraves (22 Hz) : retire le continu et les bruits sous la voix, que les effets amplifieraient
+            tmpL[(size_t) i] = (float) dcIn[0].process (l[i] * ig); tmpR[(size_t) i] = (float) dcIn[1].process (r[i] * ig);
             pkIn = std::max (pkIn, std::max (std::abs ((double) tmpL[(size_t) i]), std::abs ((double) tmpR[(size_t) i])));   // niveau APRES le bouton IN : la barre bouge quand on tourne IN
         }
         tune.processBlock (tmpL.data(), tmpR.data(), n);
@@ -1453,6 +1455,7 @@ public:
 
             const double og = og0 + (outTarget - og0) * f;
             xl *= og; xr *= og;
+            xl = dcOut[0].process (xl); xr = dcOut[1].process (xr);   // retire tout continu cree par la saturation
             xl = xl * (1.0 - byp) + dlyDryL * byp;
             xr = xr * (1.0 - byp) + dlyDryR * byp;
             lim.process (xl, xr);
@@ -1491,6 +1494,7 @@ private:
         return x < 0 ? -y : y;
     }
 
+    std::array<Biquad, 2> dcIn, dcOut;
     double sr = 48000, bpm = 120, rampStep = 0.001, byp = 0, inG = 1, outG = 1;
     bool first = true;
     std::array<float, Count> p {};
