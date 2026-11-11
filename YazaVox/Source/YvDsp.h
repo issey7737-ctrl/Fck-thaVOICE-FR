@@ -1104,6 +1104,9 @@ public:
         lat = (int) dNom;
         for (auto& x : bufL) x = 0.f;
         for (auto& x : bufR) x = 0.f;
+        for (auto& x : lowL) x = 0.f;
+        for (auto& x : lowR) x = 0.f;
+        for (auto& b : lpS) { b.lowPass (fs, kSplitHz, 0.7071); b.reset(); }
         wpos = 0; pA = pB = -dNom; xf = false; xfPos = xfLen = 0; cool = 0; periodS = 0; eMax = 0;
         D = std::max (1, (int) std::lround (fs / 12000.0));
         fsd = fs / (double) D;
@@ -1147,7 +1150,12 @@ public:
             if (! on)
             {
                 // autotune eteint : latence nulle, le signal traverse sans retard (on garde l'historique pour un rallumage sans trou)
-                for (int i = 0; i < len; ++i) { bufL[(size_t) (wpos & kMask)] = pl[i]; bufR[(size_t) (wpos & kMask)] = pr[i]; ++wpos; }
+                for (int i = 0; i < len; ++i)
+                {
+                    const double lo0 = lpS[0].process (pl[i]), lo1 = lpS[1].process (pr[i]);
+                    lowL[(size_t) (wpos & kMask)] = (float) lo0; lowR[(size_t) (wpos & kMask)] = (float) lo1;
+                    bufL[(size_t) (wpos & kMask)] = (float) (pl[i] - lo0); bufR[(size_t) (wpos & kMask)] = (float) (pr[i] - lo1); ++wpos;
+                }
                 pA = (double) wpos - dNom; xf = false; corr = 0; corrTarget = 0; periodS = 0; voiced = false;
                 continue;
             }
@@ -1178,8 +1186,13 @@ public:
 
             for (int i = 0; i < len; ++i)
             {
-                bufL[(size_t) (wpos & kMask)] = pl[i]; bufR[(size_t) (wpos & kMask)] = pr[i];
+                // on ne decale que la voix (au-dessus de ~90 Hz) : les graves (souffle, plosives, rumble) passent sans etre recolles ni decales,
+                // seulement retardes comme le reste (sinon chaque raccord y fait un "clic" grave)
+                const double lo0 = lpS[0].process (pl[i]), lo1 = lpS[1].process (pr[i]);
+                lowL[(size_t) (wpos & kMask)] = (float) lo0; lowR[(size_t) (wpos & kMask)] = (float) lo1;
+                bufL[(size_t) (wpos & kMask)] = (float) (pl[i] - lo0); bufR[(size_t) (wpos & kMask)] = (float) (pr[i] - lo1);
                 ++wpos;
+                const size_t li = (size_t) ((wpos - 1 - (long) dNom) & kMask);
                 double yl = rd (bufL, pA), yr = rd (bufR, pA);
                 if (xf)
                 {
@@ -1189,7 +1202,7 @@ public:
                     if (++xfPos >= xfLen) { pA = pB; xf = false; }
                 }
                 else pA += rate;
-                pl[i] = (float) yl; pr[i] = (float) yr;
+                pl[i] = (float) (yl + (double) lowL[li]); pr[i] = (float) (yr + (double) lowR[li]);
                 if (! xf && periodS > 0.0) { if (cool > 0) --cool; else maybeSplice(); }
             }
         }
@@ -1332,7 +1345,9 @@ private:
     std::array<float, kDec> dec {};
     std::array<double, kWin + kTauMax + 4> frame {};
     std::array<double, kTauMax + 4> cm {};
-    std::array<float, kBuf> bufL {}, bufR {};
+    std::array<float, kBuf> bufL {}, bufR {}, lowL {}, lowR {};
+    std::array<Biquad, 2> lpS;
+    static constexpr double kSplitHz = 90.0;
     long wpos = 0; double pA = 0, pB = 0, dNom = 1056, periodS = 0; bool xf = false; int xfPos = 0, xfLen = 0, cool = 0;
 };
 
