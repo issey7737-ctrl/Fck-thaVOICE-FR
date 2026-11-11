@@ -76,7 +76,7 @@ public:
     void paint (juce::Graphics&) override;
 private:
     juce::String title;
-    float level = 0.f, hold = 0.f, shownLevel = -1.f, shownHold = -1.f; int holdCount = 0, clipCount = 0; bool shownClip = false;
+    float level = 0.f, hold = 0.f; int holdCount = 0, clipCount = 0;
 };
 
 class GrMeter : public juce::Component
@@ -85,7 +85,7 @@ public:
     void push (float grDb);
     void paint (juce::Graphics&) override;
 private:
-    float gr = 0.f, shownGr = -1.f;
+    float gr = 0.f;
 };
 
 class NoteDisplay : public juce::Component
@@ -292,7 +292,7 @@ private:
     AmberKnob *inKnob = nullptr, *outKnob = nullptr, *limKnob = nullptr;
     std::vector<Row> rows;
 
-    float inLvl = 0.f, outLvl = 0.f, phase = 0.f, inHold = 0.f, shownOut = -1.f; int orbTick = 0;
+    float inLvl = 0.f, outLvl = 0.f, phase = 0.f, inHold = 0.f;
     bool syncing = false, measuring = false;
     int measureFrames = 0;
     float measurePk = 0.f;
@@ -307,7 +307,6 @@ public:
     ~YazaVoxEditor() override;
     void paint (juce::Graphics&) override;
     void resized() override;
-    void parentHierarchyChanged() override;
 
 private:
     void timerCallback() override;

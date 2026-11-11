@@ -1,27 +1,4 @@
 #include "PluginEditor.h"
-#include <algorithm>
-
-// Moteur d'affichage : Direct2D (carte graphique, leger pour le processeur) quand UNE seule fenetre du plugin est ouverte ;
-// rendu logiciel des qu'il y en a plusieurs (Direct2D de JUCE 8 peut figer FL avec plusieurs fenetres ouvertes).
-static std::vector<YazaVoxEditor*>& openEditors() { static std::vector<YazaVoxEditor*> v; return v; }
-
-static void applyRenderingEngines()
-{
-    const bool several = openEditors().size() > 1;
-    for (auto* e : openEditors())
-        if (auto* peer = e->getPeer())
-        {
-            const auto engines = peer->getAvailableRenderingEngines();
-            int d2d = -1, soft = 0;
-            for (int i = 0; i < engines.size(); ++i)
-            {
-                if (engines[i].containsIgnoreCase ("direct2d")) d2d = i;
-                else if (engines[i].containsIgnoreCase ("software")) soft = i;
-            }
-            peer->setCurrentRenderingEngine (several || d2d < 0 ? soft : d2d);
-        }
-}
-
 
 using namespace yv;
 
@@ -248,16 +225,10 @@ void LevelMeter::push (float pk)
 {
     const float db = (float) linToDb (pk);
     const float v = juce::jlimit (0.f, 1.f, (db + 60.f) / 63.f);
-    level = v > level ? v : level - (level - v) * 0.33f;
-    if (v >= hold) { hold = v; holdCount = 23; } else if (--holdCount < 0) hold = std::max (0.f, hold - 0.04f);
-    if (pk >= 0.995f) clipCount = 30; else if (clipCount > 0) --clipCount;
-    // on ne redessine que si quelque chose a visiblement change (interface en rendu logiciel : chaque dessin coute du CPU)
-    const bool clip = clipCount > 0;
-    if (std::abs (level - shownLevel) > 0.004f || std::abs (hold - shownHold) > 0.004f || clip != shownClip)
-    {
-        shownLevel = level; shownHold = hold; shownClip = clip;
-        repaint();
-    }
+    level = v > level ? v : level - (level - v) * 0.18f;
+    if (v >= hold) { hold = v; holdCount = 45; } else if (--holdCount < 0) hold = std::max (0.f, hold - 0.02f);
+    if (pk >= 0.995f) clipCount = 60; else if (clipCount > 0) --clipCount;
+    repaint();
 }
 void LevelMeter::paint (juce::Graphics& g)
 {
@@ -291,7 +262,7 @@ void GrMeter::push (float grDb)
 {
     const float target = juce::jlimit (0.f, 24.f, -grDb);
     gr = target > gr ? target : gr - (gr - target) * 0.2f;
-    if (std::abs (gr - shownGr) > 0.05f) { shownGr = gr; repaint(); }
+    repaint();
 }
 void GrMeter::paint (juce::Graphics& g)
 {
@@ -931,7 +902,6 @@ void AmberKnob::refresh()
 SimpleView::SimpleView (YazaVoxProcessor& p, std::function<void()> pro) : proc (p), onPro (std::move (pro))
 {
     setLookAndFeel (&laf);
-    setOpaque (true);   // le fond est entierement opaque : evite de redessiner la fenetre parente a chaque rafraichissement
     auto add = [this] (auto* c) { owned.emplace_back (c); addAndMakeVisible (*owned.back()); return c; };
 
     // grand bouton COMP (macro : seuil, ratio, gain de compensation, etage 2)
@@ -954,7 +924,7 @@ SimpleView::SimpleView (YazaVoxProcessor& p, std::function<void()> pro) : proc (
     lowCut.setClickingTogglesState (true);
     addAndMakeVisible (lowCut);
     lowCutAtt = std::make_unique<ButtonAtt> (p.apvts, "hpOn", lowCut);
-    autoIn.onClick = [this] { measuring = true; measureFrames = 45; measurePk = 0.f; autoIn.setButtonText ("Listening..."); };
+    autoIn.onClick = [this] { measuring = true; measureFrames = 90; measurePk = 0.f; autoIn.setButtonText ("Listening..."); };
     prevBtn.onClick = [this] { const int n = YazaVoxProcessor::presetNames().size(); selectPreset ((proc.getCurrentPreset() + n - 1) % n); };
     nextBtn.onClick = [this] { selectPreset ((proc.getCurrentPreset() + 1) % YazaVoxProcessor::presetNames().size()); };
     proBtn.onClick = [this] { if (onPro) onPro(); };
@@ -1034,19 +1004,11 @@ void SimpleView::pushLevels (float inPk, float outPk)
             measuring = false;
             autoIn.setButtonText ("Auto input");
             if (measurePk > 1e-4f)
-                setReal (proc, inGain, juce::jlimit (-18.f, 18.f, proc.getParam (inGain) + (-13.5f - (float) linToDb (measurePk))));   // la mesure est faite apres IN : on corrige a partir du reglage actuel, pic vise au milieu de la zone cible   // pic cale a -9 dBFS
+                setReal (proc, inGain, juce::jlimit (-18.f, 18.f, -9.f - (float) linToDb (measurePk)));   // pic cale a -9 dBFS
         }
     }
     autoTick (proc, autoVoice, presets, autoShow);
-    // trois petites zones separees (barre IN, barre OUT, orbe) au lieu d'un grand rectangle qui les englobe : bien moins de pixels a redessiner
-    const bool moved = std::abs (outLvl - shownOut) > 0.004f || outLvl > 0.02f || measuring;
-    if (moved)
-    {
-        shownOut = outLvl;
-        repaint (inBar.expanded (72, 44));
-        repaint (outBar.expanded (10, 20));
-        if ((++orbTick & 1) == 0) repaint (orbArea.expanded (50));    // l'orbe n'est animee qu'a ~8 images/s
-    }
+    repaint (orbArea.getUnion (inBar.getUnion (outBar)).expanded (50));
 }
 
 void SimpleView::refresh()
@@ -1379,7 +1341,7 @@ DsMini::DsMini (YazaVoxProcessor& p)
     thr = std::make_unique<KnobCell> (p, deessAmt);
     rng = std::make_unique<KnobCell> (p, deessRange);
     for (auto* c : { (juce::Component*) thr.get(), (juce::Component*) rng.get(), (juce::Component*) &mode, (juce::Component*) &band, (juce::Component*) &bar, (juce::Component*) &listen }) addAndMakeVisible (*c);
-    startTimerHz (15);
+    startTimerHz (30);
 }
 
 void DsMini::resized()
@@ -1530,14 +1492,12 @@ YazaVoxEditor::YazaVoxEditor (YazaVoxProcessor& p)
     setResizeLimits (900, 600, 1900, 1200);
     getConstrainer()->setFixedAspectRatio (0.0);
     setSize (1180, 740);
-    startTimerHz (15);
+    startTimerHz (30);
 }
 
 YazaVoxEditor::~YazaVoxEditor()
 {
     stopTimer();
-    { auto& v = openEditors(); v.erase (std::remove (v.begin(), v.end(), this), v.end()); }
-    applyRenderingEngines();
     setLookAndFeel (nullptr);
 }
 
@@ -1553,16 +1513,6 @@ void YazaVoxEditor::selectPreset (int i)
 {
     proc.applyPreset (i);
     presets.setSelectedItemIndex (proc.getCurrentPreset(), juce::dontSendNotification);
-}
-
-void YazaVoxEditor::parentHierarchyChanged()
-{
-    if (getPeer() != nullptr)
-    {
-        auto& v = openEditors();
-        if (std::find (v.begin(), v.end(), this) == v.end()) v.push_back (this);
-    }
-    applyRenderingEngines();
 }
 
 void YazaVoxEditor::timerCallback()

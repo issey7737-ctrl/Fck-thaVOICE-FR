@@ -1075,21 +1075,6 @@ private:
 // AUTOTUNE : detection de hauteur (YIN sur signal decime) + correction vers la gamme choisie.
 // Le decalage de hauteur est fait par Signalsmith Stretch (MIT, https://github.com/Signalsmith-Audio/signalsmith-stretch),
 // un decaleur a vocodeur de phase de haute qualite : pas de clic ni de battement. Latence fixe, declaree a l'hote.
-#ifndef TUNE_GATE_REL
-#define TUNE_GATE_REL 0
-#endif
-#ifndef TUNE_EMAX_DECAY
-#define TUNE_EMAX_DECAY 0.9985
-#endif
-#ifndef TUNE_WEAK_MAX
-#define TUNE_WEAK_MAX 0.3
-#endif
-#ifndef TUNE_WIN
-#define TUNE_WIN 512
-#endif
-#ifndef TUNE_HOP
-#define TUNE_HOP 80
-#endif
 class Tune
 {
 public:
@@ -1104,10 +1089,7 @@ public:
         lat = (int) dNom;
         for (auto& x : bufL) x = 0.f;
         for (auto& x : bufR) x = 0.f;
-        for (auto& x : lowL) x = 0.f;
-        for (auto& x : lowR) x = 0.f;
-        for (auto& b : lpS) { b.lowPass (fs, kSplitHz, 0.7071); b.reset(); }
-        wpos = 0; pA = pB = -dNom; xf = false; xfPos = xfLen = 0; cool = 0; periodS = 0; eMax = 0;
+        wpos = 0; pA = pB = -dNom; xf = false; xfPos = xfLen = 0; cool = 0; periodS = 0;
         D = std::max (1, (int) std::lround (fs / 12000.0));
         fsd = fs / (double) D;
         std::fill (dec.begin(), dec.end(), 0.f);
@@ -1122,7 +1104,7 @@ public:
         tauMax = std::min (kTauMax, (int) (fsd / 70.0));
         tauMin = std::max (2, (int) (fsd / 800.0));
     }
-    int nominalLatency() const noexcept { return lat; }      // retard introduit quand l'autotune est allume (0 quand il est eteint)
+    int latency() const noexcept { return lat; }
 
     void setup (const float* v)
     {
@@ -1147,19 +1129,6 @@ public:
             const int len = std::min (kChunk, n - start);
             float* pl = l + start; float* pr = r + start;
 
-            if (! on)
-            {
-                // autotune eteint : latence nulle, le signal traverse sans retard (on garde l'historique pour un rallumage sans trou)
-                for (int i = 0; i < len; ++i)
-                {
-                    const double lo0 = lpS[0].process (pl[i]), lo1 = lpS[1].process (pr[i]);
-                    lowL[(size_t) (wpos & kMask)] = (float) lo0; lowR[(size_t) (wpos & kMask)] = (float) lo1;
-                    bufL[(size_t) (wpos & kMask)] = (float) (pl[i] - lo0); bufR[(size_t) (wpos & kMask)] = (float) (pr[i] - lo1); ++wpos;
-                }
-                pA = (double) wpos - dNom; xf = false; corr = 0; corrTarget = 0; periodS = 0; voiced = false;
-                continue;
-            }
-
             if (on)
                 for (int i = 0; i < len; ++i)
                 {
@@ -1168,13 +1137,13 @@ public:
                     {
                         dec[(size_t) (decPos & (kDec - 1))] = (float) (acc / (double) D);
                         ++decPos; decCnt = 0; acc = 0;
-                        if (++hop >= TUNE_HOP) { hop = 0; analyse(); }
+                        if (++hop >= 80) { hop = 0; analyse(); }
                     }
                 }
             else corrTarget = 0;
 
             // Humanize : retune plus lent uniquement sur la partie tenue des notes longues
-            const double held = (double) heldHops * ((double) TUNE_HOP * D / sr);
+            const double held = (double) heldHops * (80.0 * D / sr);
             const double tauEff = tau + human * 0.15 * clampd ((held - 0.10) / 0.30, 0.0, 1.0);
             const double a = (on && voiced) ? (tauEff < 1e-4 ? 1.0 : 1.0 - std::exp (-(double) len / (tauEff * sr))) : 1.0 - std::exp (-(double) len / (0.05 * sr));
             ctRing[(size_t) (ctPos & 255)] = corrTarget; ++ctPos;
@@ -1186,13 +1155,8 @@ public:
 
             for (int i = 0; i < len; ++i)
             {
-                // on ne decale que la voix (au-dessus de ~90 Hz) : les graves (souffle, plosives, rumble) passent sans etre recolles ni decales,
-                // seulement retardes comme le reste (sinon chaque raccord y fait un "clic" grave)
-                const double lo0 = lpS[0].process (pl[i]), lo1 = lpS[1].process (pr[i]);
-                lowL[(size_t) (wpos & kMask)] = (float) lo0; lowR[(size_t) (wpos & kMask)] = (float) lo1;
-                bufL[(size_t) (wpos & kMask)] = (float) (pl[i] - lo0); bufR[(size_t) (wpos & kMask)] = (float) (pr[i] - lo1);
+                bufL[(size_t) (wpos & kMask)] = pl[i]; bufR[(size_t) (wpos & kMask)] = pr[i];
                 ++wpos;
-                const size_t li = (size_t) ((wpos - 1 - (long) dNom) & kMask);
                 double yl = rd (bufL, pA), yr = rd (bufR, pA);
                 if (xf)
                 {
@@ -1202,14 +1166,14 @@ public:
                     if (++xfPos >= xfLen) { pA = pB; xf = false; }
                 }
                 else pA += rate;
-                pl[i] = (float) (yl + (double) lowL[li]); pr[i] = (float) (yr + (double) lowR[li]);
+                pl[i] = (float) yl; pr[i] = (float) yr;
                 if (! xf && periodS > 0.0) { if (cool > 0) --cool; else maybeSplice(); }
             }
         }
     }
 
 private:
-    static constexpr int kDec = 4096, kTauMax = 260, kWin = TUNE_WIN, kChunk = 64, kBuf = 16384, kMask = kBuf - 1;
+    static constexpr int kDec = 4096, kTauMax = 260, kWin = 512, kChunk = 64, kBuf = 16384, kMask = kBuf - 1;
 #ifndef TUNE_DELAY_S
 #define TUNE_DELAY_S 0.046
 #endif
@@ -1263,9 +1227,8 @@ private:
             frame[(size_t) i] = x; if (i < kWin) e += x * x;
         }
         e /= kWin;
-        eMax = std::max (e, eMax * TUNE_EMAX_DECAY);                  // niveau de voix recent : le bruit de fond (meme amplifie par IN) n'est pas une voix
         double f0 = 0;
-        if (e > 2e-6 && e > eMax * TUNE_GATE_REL)
+        if (e > 2e-6)
         {
             double run = 0;
             cm[0] = 1.0;
@@ -1281,7 +1244,7 @@ private:
                 if (cm[(size_t) t] < 0.15 && cm[(size_t) t] <= cm[(size_t) (t + 1)]) { best = t; break; }
             if (best < 0)
             {
-                double m = TUNE_WEAK_MAX;
+                double m = 0.3;
                 for (int t = tauMin; t < tauMax; ++t) if (cm[(size_t) t] < m) { m = cm[(size_t) t]; best = t; }
             }
             if (best > 1)
@@ -1334,7 +1297,7 @@ private:
         }
     }
 
-    double sr = 48000, fsd = 12000, corr = 0, corrTarget = 0, amount = 1, acc = 0, tau = 0.02, mixT = 0, human = 0, flex = 0, vibAmt = 0, centre = 0, eMax = 0;
+    double sr = 48000, fsd = 12000, corr = 0, corrTarget = 0, amount = 1, acc = 0, tau = 0.02, mixT = 0, human = 0, flex = 0, vibAmt = 0, centre = 0;
     int heldHops = 0;
     double gate = 0, absSm = 0; bool gateOn = false;
     double ctRing[256] {}; int ctPos = 0, ctDelay = 0;
@@ -1345,43 +1308,48 @@ private:
     std::array<float, kDec> dec {};
     std::array<double, kWin + kTauMax + 4> frame {};
     std::array<double, kTauMax + 4> cm {};
-    std::array<float, kBuf> bufL {}, bufR {}, lowL {}, lowR {};
-    std::array<Biquad, 2> lpS;
-    static constexpr double kSplitHz = 90.0;
+    std::array<float, kBuf> bufL {}, bufR {};
     long wpos = 0; double pA = 0, pB = 0, dNom = 1056, periodS = 0; bool xf = false; int xfPos = 0, xfLen = 0, cool = 0;
 };
 
 //==============================================================================
-// LIMITEUR de sortie : latence nulle. Le gain descend vite (attaque ~0,4 ms, sans clic) puis remonte lentement ; les quelques
-// echantillons qui depassent avant que le gain ait fini de descendre sont arrondis par un ecretage doux (pas de cassure = pas de crepitement).
+// LIMITEUR de sortie : anticipation 1,5 ms (garantit de ne jamais depasser le plafond), relachement automatique, stereo lie.
 class Limiter
 {
 public:
+    static constexpr int kMaxLa = 512;
     void prepare (double fs)
     {
-        env = 1.0;
-        relC = 1.0 - std::exp (-1.0 / (0.12 * fs));
-        atkC = 1.0 - std::exp (-1.0 / (0.0004 * fs));
+        la = std::min (kMaxLa - 2, std::max (8, (int) std::lround (0.0015 * fs)));
+        bufL.fill (0.0); bufR.fill (0.0);
+        reqBuf.fill (1.0); envBuf.fill (1.0);
+        pos = 0; env = 1.0; boxSum = (double) (la + 1);
+        relC = 1.0 - std::exp (-1.0 / (0.08 * fs));
     }
-    int latency() const noexcept { return 0; }
+    int latency() const noexcept { return la; }
     void setCeiling (double dB) { ceil = dbToLin (clampd (dB, -12.0, 0.0)); }
     inline void process (double& l, double& r) noexcept
     {
+        const int N = kMaxLa;
         const double peak = std::max (std::abs (l), std::abs (r));
-        const double req = peak > ceil * 0.95 ? ceil * 0.95 / peak : 1.0;
-        env += (req - env) * (req < env ? atkC : relC);
-        l = soft (l * env); r = soft (r * env);
+        const double req = peak > ceil ? ceil / peak : 1.0;
+        bufL[pos] = l; bufR[pos] = r; reqBuf[pos] = req;
+        // minimum de la demande sur la fenetre d'anticipation
+        double mn = 1.0;
+        for (int k = 0; k <= la; ++k) mn = std::min (mn, reqBuf[(pos - k) & (N - 1)]);
+        // attaque instantanee sur le minimum, relachement progressif
+        env = mn < env ? mn : env + (mn - env) * relC;
+        boxSum += env - envBuf[(pos - la - 1) & (N - 1)];
+        envBuf[pos] = env;
+        const double g = boxSum / (double) (la + 1);              // lissage de la fenetre : rampe d'attaque sans clic
+        const int rd = (pos - la) & (N - 1);
+        l = bufL[rd] * g; r = bufR[rd] * g;
+        pos = (pos + 1) & (N - 1);
     }
 private:
-    // transparent jusqu'a 90 % du plafond, puis arrondi progressif qui n'atteint jamais le plafond
-    inline double soft (double x) const noexcept
-    {
-        const double a = std::abs (x), k = 0.9 * ceil;
-        if (a <= k) return x;
-        const double y = k + (ceil - k) * std::tanh ((a - k) / (ceil - k));
-        return x < 0 ? -y : y;
-    }
-    double ceil = 0.89, env = 1.0, relC = 0.001, atkC = 0.05;
+    int la = 72, pos = 0;
+    double ceil = 0.89, env = 1.0, relC = 0.001, boxSum = 1.0;
+    std::array<double, kMaxLa> bufL {}, bufR {}, reqBuf {}, envBuf {};
 };
 
 //==============================================================================
@@ -1391,7 +1359,7 @@ public:
     const DsScope& dsScope() const { return des.scope; }
     float dsGrNow() const { return des.grDb.load(); }
     std::atomic<float> inPk { 0.f }, outPk { 0.f }, grDb { 0.f };
-    int latency() const noexcept { return (p[(size_t) tuneOn] > 0.5f ? tune.nominalLatency() : 0) + lim.latency(); }
+    int latency() const noexcept { return tune.latency() + lim.latency(); }
     const Tune& tuner() const noexcept { return tune; }
 
     // Donnees pour l'analyseur de spectre (file mono lock-free : un producteur audio, un lecteur interface)
@@ -1404,9 +1372,8 @@ public:
         sr = sampleRate;
         tmpL.assign (16384, 0.f); tmpR.assign (16384, 0.f);
         comp.prepare (sr); eq.prepare (sr); des.prepare (sr); air.prepare (sr); wdr.prepare (sr); sat.prepare (sr); dbl.prepare (sr); cho.prepare (sr);
-        for (auto& b : dcIn) { b.highPass (sr, 22.0, 0.7071); b.reset(); } for (auto& b : dcOut) { b.highPass (sr, 18.0, 0.7071); b.reset(); }
         phn.prepare (sr); dly.prepare (sr); rev.prepare (sr); tune.prepare (sr); lim.prepare (sr);
-        dryLine[0].init (tune.nominalLatency() + 8); dryLine[1].init (tune.nominalLatency() + 8);
+        dryLine[0].init (tune.latency() + 8); dryLine[1].init (tune.latency() + 8);
         rampStep = 1.0 / (0.02 * sr);
         for (auto& r : ramp) r = -1.0;
         byp = 0; inG = outG = 1.0; first = true;
@@ -1436,27 +1403,25 @@ public:
         for (int i = 0; i < n; ++i)
         {
             const double ig = ig0 + (inTarget - ig0) * (double) (i + 1) / (double) n;
-            // filtre anti-infragraves (22 Hz) : retire le continu et les bruits sous la voix, que les effets amplifieraient
-            tmpL[(size_t) i] = (float) dcIn[0].process (l[i] * ig); tmpR[(size_t) i] = (float) dcIn[1].process (r[i] * ig);
-            pkIn = std::max (pkIn, std::max (std::abs ((double) tmpL[(size_t) i]), std::abs ((double) tmpR[(size_t) i])));   // niveau APRES le bouton IN : la barre bouge quand on tourne IN
+            tmpL[(size_t) i] = (float) (l[i] * ig); tmpR[(size_t) i] = (float) (r[i] * ig);
         }
         tune.processBlock (tmpL.data(), tmpR.data(), n);
 
         for (int i = 0; i < n; ++i)
         {
             const double dryL = l[i], dryR = r[i];
+            pkIn = std::max (pkIn, std::max (std::abs (dryL), std::abs (dryR)));
             const double f = (double) (i + 1) / (double) n;
             for (int k = 0; k < kRamps; ++k)
             {
                 const double t = on[k] ? 1.0 : 0.0;
                 double& rr = ramp[(size_t) k];
-                if (rr != t) rr = rr < t ? std::min (t, rr + rampStep) : std::max (t, rr - rampStep);
+                rr = rr < t ? std::min (t, rr + rampStep) : std::max (t, rr - rampStep);
             }
             byp = byp < (bypassOn ? 1.0 : 0.0) ? std::min (1.0, byp + rampStep) : std::max (bypassOn ? 1.0 : 0.0, byp - rampStep);
 
             dryLine[0].write (dryL); dryLine[1].write (dryR);
-            const double tl = (double) (v[tuneOn] > 0.5f ? tune.nominalLatency() : 0);
-            const double dlyDryL = dryLine[0].read (tl), dlyDryR = dryLine[1].read (tl);
+            const double dlyDryL = dryLine[0].read ((double) tune.latency()), dlyDryR = dryLine[1].read ((double) tune.latency());
             double xl = tmpL[(size_t) i], xr = tmpR[(size_t) i];
 
             if (ramp[rEq] > 0.0)  { double a = xl, b = xr; eq.process (a, b);   mixIn (xl, xr, a, b, ramp[rEq]); }
@@ -1480,7 +1445,6 @@ public:
 
             const double og = og0 + (outTarget - og0) * f;
             xl *= og; xr *= og;
-            xl = dcOut[0].process (xl); xr = dcOut[1].process (xr);   // retire tout continu cree par la saturation
             xl = xl * (1.0 - byp) + dlyDryL * byp;
             xr = xr * (1.0 - byp) + dlyDryR * byp;
             lim.process (xl, xr);
@@ -1519,7 +1483,6 @@ private:
         return x < 0 ? -y : y;
     }
 
-    std::array<Biquad, 2> dcIn, dcOut;
     double sr = 48000, bpm = 120, rampStep = 0.001, byp = 0, inG = 1, outG = 1;
     bool first = true;
     std::array<float, Count> p {};
