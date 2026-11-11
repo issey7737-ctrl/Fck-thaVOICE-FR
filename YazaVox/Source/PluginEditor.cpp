@@ -1,4 +1,27 @@
 #include "PluginEditor.h"
+#include <algorithm>
+
+// Moteur d'affichage : Direct2D (carte graphique, leger pour le processeur) quand UNE seule fenetre du plugin est ouverte ;
+// rendu logiciel des qu'il y en a plusieurs (Direct2D de JUCE 8 peut figer FL avec plusieurs fenetres ouvertes).
+static std::vector<YazaVoxEditor*>& openEditors() { static std::vector<YazaVoxEditor*> v; return v; }
+
+static void applyRenderingEngines()
+{
+    const bool several = openEditors().size() > 1;
+    for (auto* e : openEditors())
+        if (auto* peer = e->getPeer())
+        {
+            const auto engines = peer->getAvailableRenderingEngines();
+            int d2d = -1, soft = 0;
+            for (int i = 0; i < engines.size(); ++i)
+            {
+                if (engines[i].containsIgnoreCase ("direct2d")) d2d = i;
+                else if (engines[i].containsIgnoreCase ("software")) soft = i;
+            }
+            peer->setCurrentRenderingEngine (several || d2d < 0 ? soft : d2d);
+        }
+}
+
 
 using namespace yv;
 
@@ -1513,6 +1536,8 @@ YazaVoxEditor::YazaVoxEditor (YazaVoxProcessor& p)
 YazaVoxEditor::~YazaVoxEditor()
 {
     stopTimer();
+    { auto& v = openEditors(); v.erase (std::remove (v.begin(), v.end(), this), v.end()); }
+    applyRenderingEngines();
     setLookAndFeel (nullptr);
 }
 
@@ -1530,11 +1555,14 @@ void YazaVoxEditor::selectPreset (int i)
     presets.setSelectedItemIndex (proc.getCurrentPreset(), juce::dontSendNotification);
 }
 
-// Rendu logiciel : le moteur Direct2D de JUCE 8 fige certains hotes (FL Studio) quand plusieurs fenetres de plugin sont ouvertes,
-// et pese plus lourd que necessaire pour cette interface.
 void YazaVoxEditor::parentHierarchyChanged()
 {
-    if (auto* peer = getPeer()) peer->setCurrentRenderingEngine (0);
+    if (getPeer() != nullptr)
+    {
+        auto& v = openEditors();
+        if (std::find (v.begin(), v.end(), this) == v.end()) v.push_back (this);
+    }
+    applyRenderingEngines();
 }
 
 void YazaVoxEditor::timerCallback()
