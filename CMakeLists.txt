@@ -23,6 +23,8 @@ juce_add_plugin(YazaVox
     FORMATS VST3
     PRODUCT_NAME "Fck ThaVOICE")
 
+juce_add_binary_data(YazaVoxAssets SOURCES YazaVox/Assets/ui_bg.png)
+
 target_sources(YazaVox PRIVATE
     YazaVox/Source/PluginProcessor.cpp
     YazaVox/Source/PluginEditor.cpp)
@@ -39,6 +41,7 @@ target_compile_options(YazaVox PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/utf-8>)
 
 target_link_libraries(YazaVox
     PRIVATE
+        YazaVoxAssets
         juce::juce_audio_processors
         juce::juce_dsp
         juce::juce_gui_basics

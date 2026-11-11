@@ -1,4 +1,5 @@
 #include "PluginEditor.h"
+#include <BinaryData.h>
 
 using namespace yv;
 
@@ -899,12 +900,165 @@ void AmberKnob::refresh()
 }
 
 //==============================================================================
+// Vue SIMPLE : fond de la maquette (image fixe) + vrais boutons dessines par le code
+static const juce::Colour bBlue { 0xff0067be }, bNavy { 0xff1426a8 }, bDeep { 0xff03003a }, bCyan { 0xff5fd4ff };
+
+static juce::Font plateFont (float h)
+{
+    static const bool impact = juce::Font::findAllTypefaceNames().contains ("Impact");
+    return impact ? juce::Font (juce::FontOptions ("Impact", h, juce::Font::plain)) : juce::Font (juce::FontOptions (h, juce::Font::bold));
+}
+
+BlueLAF::BlueLAF()
+{
+    setColour (juce::PopupMenu::backgroundColourId, juce::Colour (0xff0a1a8c));
+    setColour (juce::PopupMenu::textColourId, juce::Colours::white);
+    setColour (juce::PopupMenu::highlightedBackgroundColourId, bBlue);
+    setColour (juce::PopupMenu::highlightedTextColourId, juce::Colours::white);
+    setColour (juce::ComboBox::textColourId, juce::Colours::transparentBlack);   // le texte est dessine par la vue (police de la maquette)
+    setColour (juce::Slider::rotarySliderFillColourId, bBlue);
+}
+
+void BlueLAF::drawRotarySlider (juce::Graphics& g, int x, int y, int w, int h, float pos, float a0, float a1, juce::Slider& s)
+{
+    const auto b = juce::Rectangle<int> (x, y, w, h).toFloat();
+    const auto c = b.getCentre();
+    const float R = std::min (b.getWidth(), b.getHeight()) * 0.5f - 1.f;
+    if (R < 6.f) return;
+    const float ang = a0 + pos * (a1 - a0);
+    const bool active = (bool) s.getProperties().getWithDefault ("active", true);
+
+    if (s.getProperties().contains ("big"))     // grand bouton COMP : seul le trait tourne, sur le crane de la maquette
+    {
+        const float rb = R * 0.5f;      // R = rayon du bouton (zone de glisse)
+        juce::Path p; p.addRoundedRectangle (-9.f * R / 210.f, -rb * 2.55f * 0.5f * 1.0f - 0.f, 18.f * R / 210.f, rb * 1.0f, 8.f * R / 210.f);
+        juce::Path line; line.addRoundedRectangle (-10.f * R / 210.f, -175.f * R / 210.f, 20.f * R / 210.f, 108.f * R / 210.f, 9.f * R / 210.f);
+        g.setColour (active ? bBlue : bBlue.withAlpha (0.45f));
+        g.fillPath (line, juce::AffineTransform::rotation (ang).translated (c.x, c.y - 6.f * R / 210.f));
+        if (s.isMouseButtonDown())
+        {
+            g.setColour (bCyan.withAlpha (0.35f));
+            g.drawEllipse (c.x - R * 0.9f, c.y - R * 0.9f, R * 1.8f, R * 1.8f, 3.f);
+        }
+        return;
+    }
+
+    const bool eyes = ! s.getProperties().contains ("noEyes");
+    const bool hot = s.isMouseOverOrDragging();
+    const float disc = R * 0.86f;
+    g.setColour (juce::Colour (0xff1428a8).withAlpha (active ? 1.f : 0.6f));
+    g.fillEllipse (c.x - R, c.y - R, R * 2.f, R * 2.f);
+    if (hot) { g.setColour (bCyan.withAlpha (0.55f)); g.drawEllipse (c.x - R, c.y - R, R * 2.f, R * 2.f, std::max (1.5f, R * 0.07f)); }
+    g.setColour (juce::Colour (active ? 0xfffafafa : 0xffb9c2d6));
+    g.fillEllipse (c.x - disc, c.y - disc, disc * 2.f, disc * 2.f);
+    if (eyes)   // deux yeux dont les pupilles regardent dans la direction du trait
+    {
+        const float er = disc * 0.30f, ex = disc * 0.52f, ey = disc * 0.39f;
+        const float lx = std::sin (ang) * er * 0.38f, ly = -std::cos (ang) * er * 0.38f;
+        for (int k = -1; k <= 1; k += 2)
+        {
+            const float cx = c.x + ex * (float) k, cy = c.y + ey;
+            g.setColour (active ? bBlue : bBlue.withAlpha (0.5f));
+            g.fillEllipse (cx - er, cy - er, er * 2.f, er * 2.f);
+            const float pr = er * 0.34f;
+            g.setColour (juce::Colours::white);
+            g.fillEllipse (cx + lx - pr + (float) k * er * 0.14f, cy + ly - pr + er * 0.10f, pr * 2.f, pr * 2.f);
+        }
+    }
+    juce::Path line; line.addRoundedRectangle (-disc * 0.05f, -disc * 0.88f, disc * 0.10f, disc * (eyes ? 0.58f : 0.62f), disc * 0.05f);
+    g.setColour (active ? bBlue : bBlue.withAlpha (0.5f));
+    g.fillPath (line, juce::AffineTransform::rotation (ang).translated (c.x, c.y));
+}
+
+void BlueLAF::drawToggleButton (juce::Graphics& g, juce::ToggleButton& b, bool over, bool)
+{
+    const auto r = b.getLocalBounds().toFloat();
+    const bool on = b.getToggleState();
+    const auto mode = b.getProperties().getWithDefault ("mode", "dim").toString();
+    if (mode == "lever")     // interrupteur ON/OFF de TUNE
+    {
+        const float w = r.getWidth() * 0.46f, x = r.getCentreX() - w * 0.5f, y0 = r.getY() + r.getHeight() * 0.16f, h = r.getHeight() * 0.68f;
+        g.setColour (juce::Colour (0xff1b2fc0));
+        g.fillRoundedRectangle (x, y0, w, h, w * 0.5f);
+        g.setColour (juce::Colours::white.withAlpha (0.95f));
+        g.drawRoundedRectangle (x, y0, w, h, w * 0.5f, 2.f);
+        const float hr = w * 0.55f, hy = on ? y0 + hr + 2.f : y0 + h - hr - 2.f;
+        g.setColour (on ? juce::Colour (0xfffafafa) : juce::Colour (0xff9aa6d8));
+        g.fillEllipse (r.getCentreX() - hr, hy - hr, hr * 2.f, hr * 2.f);
+        g.setColour (on ? bBlue : juce::Colour (0xff4a58b8));
+        g.fillEllipse (r.getCentreX() - hr * 0.38f, hy - hr * 0.38f, hr * 0.76f, hr * 0.76f);
+        if (over) { g.setColour (bCyan.withAlpha (0.6f)); g.drawRoundedRectangle (x - 2.f, y0 - 2.f, w + 4.f, h + 4.f, w * 0.5f, 1.6f); }
+        return;
+    }
+    // plaque ou titre : on grise (assombrit) quand c'est eteint, on eclaire au survol
+    if (! on) { g.setColour (juce::Colour (0xff04003e).withAlpha (mode == "title" ? 0.55f : 0.50f)); g.fillRect (r); }
+    if (over) { g.setColour (juce::Colours::white.withAlpha (0.13f)); g.fillRect (r); }
+}
+
+void BlueLAF::drawButtonBackground (juce::Graphics& g, juce::Button& b, const juce::Colour&, bool over, bool down)
+{
+    const auto r = b.getLocalBounds().toFloat();
+    if (b.getProperties().contains ("plate"))
+    {
+        g.setColour (down ? bCyan : bBlue);
+        g.fillRoundedRectangle (r.reduced (1.f), 5.f);
+    }
+    if (over || down) { g.setColour (juce::Colours::white.withAlpha (down ? 0.26f : 0.14f)); g.fillRect (r); }
+}
+
+void BlueLAF::drawButtonText (juce::Graphics& g, juce::TextButton& b, bool, bool)
+{
+    if (b.getButtonText().isEmpty()) return;
+    g.setColour (juce::Colours::white);
+    g.setFont (plateFont (b.getHeight() * 0.62f));
+    g.drawFittedText (b.getButtonText(), b.getLocalBounds().reduced (4, 0), juce::Justification::centred, 1, 0.6f);
+}
+
+void BlueLAF::drawComboBox (juce::Graphics& g, int w, int h, bool, int, int, int, int, juce::ComboBox& b)
+{
+    if (b.isMouseOver (true)) { g.setColour (juce::Colours::white.withAlpha (0.12f)); g.fillRect (0, 0, w, h); }
+}
+
+juce::Rectangle<int> SimpleView::M (const juce::Rectangle<float>& r) const
+{
+    return juce::Rectangle<float> (offX + r.getX() * scale, offY + r.getY() * scale, r.getWidth() * scale, r.getHeight() * scale).toNearestInt();
+}
+
+juce::ComboBox* SimpleView::addBox (int idx, juce::Rectangle<float> r)
+{
+    auto* box = new juce::ComboBox();
+    juce::StringArray items; items.addTokens (kDefs[idx].unit, "|", "");
+    box->addItemList (items, 1);
+    box->setColour (juce::ComboBox::textColourId, juce::Colours::transparentBlack);
+    box->setColour (juce::ComboBox::arrowColourId, juce::Colours::transparentBlack);
+    box->onChange = [this] { repaint(); };
+    owned.emplace_back (box);
+    addAndMakeVisible (*box);
+    boxAtts.push_back (std::make_unique<ComboAtt> (proc.apvts, idOf (idx), *box));
+    places.push_back ({ box, r });
+    return box;
+}
+
+juce::ToggleButton* SimpleView::addToggle (int idx, const char* mode, juce::Rectangle<float> r)
+{
+    auto* t = new juce::ToggleButton();
+    t->setClickingTogglesState (true);
+    t->getProperties().set ("mode", mode);
+    owned.emplace_back (t);
+    addAndMakeVisible (*t);
+    btnAtts.push_back (std::make_unique<ButtonAtt> (proc.apvts, idOf (idx), *t));
+    places.push_back ({ t, r });
+    return t;
+}
+
 SimpleView::SimpleView (YazaVoxProcessor& p, std::function<void()> pro) : proc (p), onPro (std::move (pro))
 {
     setLookAndFeel (&laf);
-    auto add = [this] (auto* c) { owned.emplace_back (c); addAndMakeVisible (*owned.back()); return c; };
+    setOpaque (true);
+    src = juce::ImageCache::getFromMemory (BinaryData::ui_bg_png, BinaryData::ui_bg_pngSize);
+    { juce::uint32 s = 12345u; for (auto& v : rayBase) { s = s * 1664525u + 1013904223u; v = 0.35f + 0.65f * (float) ((s >> 16) & 0xff) / 255.f; } }
 
-    // grand bouton COMP (macro : seuil, ratio, gain de compensation, etage 2)
+    // grand bouton COMP (macro : seuil, ratio, gain de compensation, etage 2) : zone de glisse sur le crane
     compMacro.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
     compMacro.setRotaryParameters (juce::MathConstants<float>::pi * 1.15f, juce::MathConstants<float>::pi * 2.85f, true);
     compMacro.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
@@ -916,59 +1070,74 @@ SimpleView::SimpleView (YazaVoxProcessor& p, std::function<void()> pro) : proc (
     compMacro.setMouseDragSensitivity (260);
     compMacro.onValueChange = [this] { if (! syncing) setComp ((float) compMacro.getValue() / 100.f); };
     addAndMakeVisible (compMacro);
-    compLabel.setText ("COMP", juce::dontSendNotification);
-    compLabel.setJustificationType (juce::Justification::centred);
-    compLabel.setInterceptsMouseClicks (false, false);
-    addAndMakeVisible (compLabel);
+    places.push_back ({ &compMacro, { 530.f - 215.f, 535.f - 215.f, 430.f, 430.f } });
 
-    lowCut.setClickingTogglesState (true);
-    addAndMakeVisible (lowCut);
-    lowCutAtt = std::make_unique<ButtonAtt> (p.apvts, "hpOn", lowCut);
-    autoIn.onClick = [this] { measuring = true; measureFrames = 90; measurePk = 0.f; autoIn.setButtonText ("Listening..."); };
+    // barre du haut
+    addToggle (hpOn, "dim", { 335.f, 22.f, 238.f, 118.f });
+    autoIn.onClick = [this] { measuring = true; measureFrames = 45; measurePk = 0.f; };
     prevBtn.onClick = [this] { const int n = YazaVoxProcessor::presetNames().size(); selectPreset ((proc.getCurrentPreset() + n - 1) % n); };
     nextBtn.onClick = [this] { selectPreset ((proc.getCurrentPreset() + 1) % YazaVoxProcessor::presetNames().size()); };
     proBtn.onClick = [this] { if (onPro) onPro(); };
     autoVoice.onClick = [this] { autoClick (proc); };
+    autoVoice.getProperties().set ("plate", true);
+    places.push_back ({ &autoIn, { 573.f, 20.f, 213.f, 113.f } });
+    places.push_back ({ &prevBtn, { 866.f, 52.f, 46.f, 60.f } });
+    places.push_back ({ &nextBtn, { 1334.f, 52.f, 46.f, 60.f } });
+    places.push_back ({ &proBtn, { 1444.f, 10.f, 234.f, 114.f } });
+    places.push_back ({ &autoVoice, { 30.f, 205.f, 270.f, 62.f } });
     for (auto* b : { &autoIn, &autoVoice, &prevBtn, &nextBtn, &proBtn }) addAndMakeVisible (*b);
     presets.addItemList (YazaVoxProcessor::presetNames(), 1);
     presets.setSelectedItemIndex (proc.getCurrentPreset(), juce::dontSendNotification);
-    presets.setJustificationType (juce::Justification::centred);
     presets.onChange = [this] { selectPreset (presets.getSelectedItemIndex()); };
     addAndMakeVisible (presets);
+    places.push_back ({ &presets, { 912.f, 36.f, 420.f, 84.f } });
 
-    auto on1 = [&p] (std::vector<int> ids) { return [&p, ids] (float v) { for (int id : ids) setReal (p, id, v > 0.0f ? 1.f : 0.f); }; };
     auto onAlways = [&p] (int id) { return [&p, id] (float) { setReal (p, id, 1.f); }; };
     auto onFx = [&p] (int id) { return [&p, id] (float v) { setReal (p, id, v > 0.f ? 1.f : 0.f); if (v > 0.f) setReal (p, fxOn, 1.f); }; };
-    (void) on1;
+    auto onMix = [&p] (int id) { return [&p, id] (float v) { setReal (p, id, v > 0.f ? 1.f : 0.f); }; };
+    auto knob = [&] (int idx, std::vector<int> gates, std::function<void (float)> cb, float cx, float cy, float r, bool eyes = true)
+    {
+        auto* k = new AmberKnob (p, idx, "", std::move (gates), std::move (cb), false);
+        if (! eyes) k->slider.getProperties().set ("noEyes", true);
+        owned.emplace_back (k);
+        addAndMakeVisible (*k);
+        places.push_back ({ k, { cx - r - 8.f, cy - r - 8.f, 2.f * (r + 8.f), 2.f * (r + 8.f) } });
+        return k;
+    };
 
     // EQ
-    rows.push_back ({ "EQ", eqOn, {}, {} });
-    rows.back().items = { add (new AmberKnob (p, lsG, "Low", { eqOn }, onAlways (eqOn))), add (new AmberKnob (p, lmG, "Mid", { eqOn }, onAlways (eqOn))),
-                          add (new AmberKnob (p, hmG, "Hi", { eqOn }, onAlways (eqOn))), add (new AmberKnob (p, hsG, "Air", { eqOn }, onAlways (eqOn))),
-                          add (new AmberKnob (p, airHigh, "Exciter", { airOn }, [&p] (float v) { setReal (p, airOn, v > 0.f ? 1.f : 0.f); })) };
+    rows.push_back ({ eqOn, { 1195.f, 195.f, 725.f, 185.f } });
+    addToggle (eqOn, "title", { 950.f, 215.f, 200.f, 155.f });
+    knob (lsG, { eqOn }, onAlways (eqOn), 1250, 277, 43); knob (lmG, { eqOn }, onAlways (eqOn), 1414, 260, 43);
+    knob (hmG, { eqOn }, onAlways (eqOn), 1576, 268, 43); knob (hsG, { eqOn }, onAlways (eqOn), 1741, 253, 43);
     // TUNE
-    rows.push_back ({ "TUNE", tuneOn, {}, {} });
-    rows.back().items = { add (new ToggleCell (p, tuneOn)), add (new ChoiceCell (p, tuneKey)), add (new ChoiceCell (p, tuneScale)),
-                          add (new AmberKnob (p, tuneSpeed, "Retune", { tuneOn }, onAlways (tuneOn))), add (new AmberKnob (p, tuneHuman, "Humanize", { tuneOn }, onAlways (tuneOn))) };
+    rows.push_back ({ tuneOn, { 1265.f, 392.f, 655.f, 150.f } });
+    addToggle (tuneOn, "title", { 1030.f, 395.f, 225.f, 126.f });
+    addToggle (tuneOn, "lever", { 1262.f, 400.f, 62.f, 116.f });
+    keyBox = addBox (tuneKey, { 1325.f, 398.f, 102.f, 112.f });
+    scaleBox = addBox (tuneScale, { 1432.f, 398.f, 136.f, 92.f });
+    knob (tuneSpeed, { tuneOn }, onAlways (tuneOn), 1631, 439, 43); knob (tuneHuman, { tuneOn }, onAlways (tuneOn), 1783, 449, 43);
     // FX
-    rows.push_back ({ "FX", fxOn, {}, {} });
-    rows.back().items = { add (new AmberKnob (p, deessAmt, "De-ess", { fxOn, deessOn }, onFx (deessOn))), add (new AmberKnob (p, satDrive, "Drive", { fxOn, satOn }, onFx (satOn))),
-                          add (new AmberKnob (p, phoneAmt, "Phone", { fxOn, phoneOn }, onFx (phoneOn))), add (new AmberKnob (p, dblAmt, "Doubler", { fxOn, dblOn }, onFx (dblOn))),
-                          add (new AmberKnob (p, choMix, "Chorus", { fxOn, choOn }, onFx (choOn))) };
+    rows.push_back ({ fxOn, { 1305.f, 548.f, 615.f, 175.f } });
+    addToggle (fxOn, "title", { 1110.f, 550.f, 185.f, 115.f });
+    knob (deessAmt, { fxOn, deessOn }, onFx (deessOn), 1364, 605, 36); knob (satDrive, { fxOn, satOn }, onFx (satOn), 1475, 627, 36);
+    knob (phoneAmt, { fxOn, phoneOn }, onFx (phoneOn), 1584, 615, 36); knob (dblAmt, { fxOn, dblOn }, onFx (dblOn), 1688, 653, 36);
+    knob (choMix, { fxOn, choOn }, onFx (choOn), 1791, 620, 36);
     // DLY
-    rows.push_back ({ "DLY", dlyOn, {}, {} });
-    rows.back().items = { add (new AmberKnob (p, dlyMix, "Delay", { dlyOn }, [&p] (float v) { setReal (p, dlyOn, v > 0.f ? 1.f : 0.f); })),
-                          add (new AmberKnob (p, dlyFb, "Feed", { dlyOn })), add (new AmberKnob (p, dlyLP, "Filter", { dlyOn })),
-                          add (new ChoiceCell (p, dlyNote)), add (new ToggleCell (p, dlyPing)) };
+    rows.push_back ({ dlyOn, { 1300.f, 710.f, 620.f, 180.f } });
+    addToggle (dlyOn, "title", { 1025.f, 700.f, 260.f, 170.f });
+    knob (dlyMix, { dlyOn }, onMix (dlyOn), 1360, 775, 43); knob (dlyFb, { dlyOn }, {}, 1484, 788, 37); knob (dlyLP, { dlyOn }, {}, 1598, 783, 36);
+    noteBox = addBox (dlyNote, { 1653.f, 782.f, 116.f, 76.f });
+    addToggle (dlyPing, "dim", { 1774.f, 788.f, 106.f, 72.f });
     // REV
-    rows.push_back ({ "REV", revOn, {}, {} });
-    rows.back().items = { add (new AmberKnob (p, revMix, "Mix", { revOn }, [&p] (float v) { setReal (p, revOn, v > 0.f ? 1.f : 0.f); })),
-                          add (new AmberKnob (p, revDecay, "Decay", { revOn })), add (new AmberKnob (p, revSize, "Size", { revOn })),
-                          add (new AmberKnob (p, revDuck, "Duck", { revOn })), add (new ChoiceCell (p, revMode)) };
+    rows.push_back ({ revOn, { 1400.f, 908.f, 520.f, 172.f } });
+    addToggle (revOn, "title", { 1130.f, 920.f, 275.f, 140.f });
+    knob (revMix, { revOn }, onMix (revOn), 1450, 979, 34); knob (revDecay, { revOn }, {}, 1533, 1017, 34);
+    knob (revSize, { revOn }, {}, 1613, 967, 34); knob (revDuck, { revOn }, {}, 1695, 1011, 34);
+    modeBox = addBox (revMode, { 1742.f, 943.f, 126.f, 82.f });
 
-    inKnob = add (new AmberKnob (p, inGain, "IN", {}, {}, false));
-    outKnob = add (new AmberKnob (p, outGain, "OUT", {}, {}, false));
-    limKnob = add (new AmberKnob (p, limCeil, "LIMIT", {}, {}, true));
+    inKnob = knob (inGain, {}, {}, 452, 1023, 29, false);
+    outKnob = knob (outGain, {}, {}, 609, 1023, 29, false);
     refresh();
 }
 
@@ -992,23 +1161,35 @@ void SimpleView::setComp (float m)
 
 void SimpleView::pushLevels (float inPk, float outPk)
 {
-    auto sm = [] (float& l, float pk) { const float v = juce::jlimit (0.f, 1.f, ((float) linToDb (pk) + 60.f) / 60.f); l = v > l ? v : l - (l - v) * 0.15f; };
-    sm (inLvl, inPk); sm (outLvl, outPk);
-    phase += 0.09f;
-    inHold = std::max (inLvl, inHold - 0.004f);   // pic recent : sert a dire si l'entree est dans la zone cible
+    // niveau IN mesure APRES le bouton IN (la zone TARGET se regle avec IN)
+    const float pkIn = inPk * (float) std::pow (10.0, proc.getParam (inGain) / 20.0);
+    auto sm = [] (float& l, float pk) { const float v = juce::jlimit (0.f, 1.f, ((float) linToDb (pk) + 60.f) / 60.f); l = v > l ? v : l - (l - v) * 0.33f; };
+    sm (inLvl, pkIn); sm (outLvl, outPk);
+    if (outLvl > 0.02f) phase += 0.18f;
+    inHold = std::max (inLvl, inHold - 0.008f);
     if (measuring)
     {
-        measurePk = std::max (measurePk, inPk);
+        measurePk = std::max (measurePk, pkIn);
         if (--measureFrames <= 0)
         {
             measuring = false;
-            autoIn.setButtonText ("Auto input");
             if (measurePk > 1e-4f)
-                setReal (proc, inGain, juce::jlimit (-18.f, 18.f, -9.f - (float) linToDb (measurePk)));   // pic cale a -9 dBFS
+                setReal (proc, inGain, juce::jlimit (-18.f, 18.f, proc.getParam (inGain) + (-13.5f - (float) linToDb (measurePk))));
+            repaint (M (573.f, 20.f, 213.f, 113.f));
         }
     }
     autoTick (proc, autoVoice, presets, autoShow);
-    repaint (orbArea.getUnion (inBar.getUnion (outBar)).expanded (50));
+
+    // ne redessine que ce qui a change (une etape sur deux : 15 images/s)
+    if ((++orbTick & 1) != 0) return;
+    if (std::abs (inLvl - shownIn) > 0.004f || std::abs (outLvl - shownOut) > 0.004f)
+    {
+        if (std::abs (inLvl - shownIn) > 0.004f) repaint (inBar.expanded (4, 60));
+        if (std::abs (outLvl - shownOut) > 0.004f) repaint (outBar.expanded (4, 8));
+        if (std::abs (outLvl - shownOut) > 0.004f || std::abs (phase - shownPhase) > 0.01f) repaint (orbArea);
+        shownIn = inLvl; shownOut = outLvl; shownPhase = phase;
+    }
+    if (measuring) repaint (M (573.f, 20.f, 213.f, 113.f));
 }
 
 void SimpleView::refresh()
@@ -1025,170 +1206,130 @@ void SimpleView::refresh()
     for (auto& r : rows)
     {
         const bool on = proc.getParam (r.onIdx) > 0.5f;
-        for (auto* c : r.items) c->setAlpha (on ? 1.f : 0.55f);
+        for (auto& pl : places)
+            if (auto* k = dynamic_cast<AmberKnob*> (pl.c)) if (r.dimR.contains (pl.r.getCentre())) k->setAlpha (on ? 1.f : 0.6f);
     }
-    repaint (titleArea.getUnion (orbArea));
+    const juce::String now[5] = { keyBox->getText(), scaleBox->getText(), noteBox->getText(), modeBox->getText(), presets.getText() };
+    for (int i = 0; i < 5; ++i) if (shown[i] != now[i]) { shown[i] = now[i]; repaint(); }
+    if (proc.getParam (tuneOn) > 0.5f && (++noteTick & 3) == 0) repaint (noteArea);
 }
 
 void SimpleView::resized()
 {
-    const int W = getWidth(), H = getHeight();
-    auto fx_ = [&] (float f) { return (int) std::round ((float) W * f); };
-    auto fy_ = [&] (float f) { return (int) std::round ((float) H * f); };
+    const float W = (float) getWidth(), H = (float) getHeight();
+    scale = std::min (W / 1920.f, H / 1080.f);
+    offX = (W - 1920.f * scale) * 0.5f; offY = (H - 1080.f * scale) * 0.5f;
+    for (auto& pl : places) pl.c->setBounds (M (pl.r));
+    orbArea = M (530.f - 400.f, 535.f - 400.f, 800.f, 800.f).getIntersection (getLocalBounds());
+    inBar = M (70.f, 1008.f, 380.f, 24.f);
+    outBar = M (612.f, 1008.f, 370.f, 24.f);
+    noteArea = M (1040.f, 514.f, 220.f, 34.f);
 
-    // barre du haut
-    const int ty = fy_ (0.018f), th = fy_ (0.07f);
-    int x = fx_ (0.432f);
-    auto put = [&] (juce::Component& c, float w) { c.setBounds (x, ty, fx_ (w), th); x += fx_ (w + 0.006f); };
-    put (lowCut, 0.06f); put (autoIn, 0.075f); put (autoVoice, 0.1f); put (prevBtn, 0.03f); put (presets, 0.14f); put (nextBtn, 0.03f); put (proBtn, 0.055f);
-
-    // bandes de droite
-    const int bx = fx_ (0.47f), bw = fx_ (0.52f);
-    const float ys[5][2] = { { 0.115f, 0.255f }, { 0.27f, 0.41f }, { 0.425f, 0.565f }, { 0.58f, 0.72f }, { 0.735f, 0.875f } };
-    const int ri[5] = { 0, 1, 2, 3, 4 };
-    for (int k = 0; k < 5; ++k)
-    {
-        auto& r = rows[(size_t) ri[k]];
-        r.band = { bx, fy_ (ys[k][0]), bw, fy_ (ys[k][1] - ys[k][0]) };
-        auto area = r.band.reduced (6, 4);
-        area.removeFromLeft ((int) ((float) r.band.getWidth() * 0.21f));
-        const int n = (int) r.items.size();
-        const int cw = area.getWidth() / n;
-        for (int i = 0; i < n; ++i) r.items[(size_t) i]->setBounds (area.getX() + i * cw + 4, area.getY(), cw - 8, area.getHeight());
-    }
-    titleArea = { fx_ (0.03f), fy_ (0.02f), fx_ (0.40f), fy_ (0.15f) };
-
-    // COMP + halo
-    const int d = (int) ((float) std::min (W * 0.30f, H * 0.52f));
-    const juce::Point<int> c { fx_ (0.235f), fy_ (0.485f) };
-    compMacro.setBounds (c.x - d / 2, c.y - d / 2, d, d);
-    compLabel.setFont (juce::Font (juce::FontOptions ((float) H * 0.07f, juce::Font::bold)));
-    compLabel.setBounds (c.x - d / 2, c.y + d / 2 + fy_ (0.01f), d, fy_ (0.09f));
-    orbArea = { c.x - d, c.y - d, d * 2, d * 2 };
-
-    // barres IN / OUT
-    const int by = fy_ (0.945f), bh = fy_ (0.03f), kd = fy_ (0.07f);
-    inBar = { fx_ (0.012f), by, fx_ (0.29f), bh };
-    outBar = { fx_ (0.70f), by, fx_ (0.285f), bh };
-    inKnob->setBounds (fx_ (0.315f), by + bh / 2 - kd / 2, kd, kd);
-    outKnob->setBounds (fx_ (0.655f) - kd, by + bh / 2 - kd / 2, kd, kd);
-    limKnob->setBounds (fx_ (0.475f) - kd / 2, by + bh / 2 - kd / 2, kd, kd);
-
-    // fond mis en cache
-    bg = juce::Image (juce::Image::ARGB, std::max (1, W), std::max (1, H), true);
+    // fond mis en cache a la taille de la fenetre (la maquette est recadree au centre, marges prolongees)
+    bg = juce::Image (juce::Image::RGB, std::max (1, getWidth()), std::max (1, getHeight()), false);
     juce::Graphics g (bg);
-    g.setGradientFill (juce::ColourGradient (juce::Colour (0xff86141b), 0, 0, juce::Colour (0xff560b10), 0, (float) H, false));
-    g.fillAll();
-    g.setGradientFill (juce::ColourGradient (juce::Colour (0x33ff5a30), (float) W * 0.3f, (float) H * 0.45f, juce::Colours::transparentBlack, (float) W * 0.8f, (float) H * 0.9f, true));
-    g.fillAll();
-    g.setColour (juce::Colours::black.withAlpha (0.10f));
-    const int step = std::max (6, W / 190);
-    for (int yy = 0; yy < H; yy += step)
-        for (int xx = ((yy / step) & 1) * step / 2; xx < W; xx += step) g.fillRect (xx, yy, 2, 2);
-    // bandes
-    for (auto& r : rows)
-    {
-        g.setColour (juce::Colour (0xff3d080c).withAlpha (0.78f));
-        juce::Path p; p.addRoundedRectangle (r.band.toFloat(), 14.f);
-        g.fillPath (p);
-        g.setColour (juce::Colour (0xffb0262c).withAlpha (0.22f));
-        for (int w = 0; w < 4; ++w)
-        {
-            juce::Path s;
-            const float yb = (float) r.band.getY() + (float) r.band.getHeight() * (0.2f + 0.2f * (float) w);
-            for (int xx = r.band.getX() + 10; xx < r.band.getRight() - 10; xx += 6)
-            {
-                const float yy = yb + 5.f * std::sin ((float) xx * 0.018f + (float) w * 1.3f);
-                if (xx == r.band.getX() + 10) s.startNewSubPath ((float) xx, yy); else s.lineTo ((float) xx, yy);
-            }
-            g.strokePath (s, juce::PathStrokeType (1.4f));
-        }
-    }
+    const auto cTop = src.getPixelAt (0, 0), cTopR = src.getPixelAt (src.getWidth() - 1, 0);
+    const auto cBot = src.getPixelAt (0, src.getHeight() - 1), cBotR = src.getPixelAt (1100, src.getHeight() - 1);
+    g.setGradientFill (juce::ColourGradient (cTop, 0, 0, cTopR, W, 0, false)); g.fillRect (0.f, 0.f, W, offY + 1.f);
+    g.setGradientFill (juce::ColourGradient (cBot, offX, 0, cBotR, offX + 1100.f * scale, 0, false)); g.fillRect (0.f, H - offY - 1.f, W, offY + 1.f);
+    g.setGradientFill (juce::ColourGradient (cTop, 0, 0, cBot, 0, H, false)); g.fillRect (0.f, 0.f, offX + 1.f, H); g.fillRect (W - offX - 1.f, 0.f, offX + 1.f, H);
+    g.setImageResamplingQuality (juce::Graphics::highResamplingQuality);
+    g.drawImage (src, (int) std::round (offX), (int) std::round (offY), (int) std::round (1920.f * scale), (int) std::round (1080.f * scale),
+                 0, 0, src.getWidth(), src.getHeight());
 }
 
 void SimpleView::paint (juce::Graphics& g)
 {
     g.drawImageAt (bg, 0, 0);
-    const int W = getWidth(), H = getHeight();
+    const float s = scale;
+    auto P = [&] (float x, float y) { return juce::Point<float> (offX + x * s, offY + y * s); };
 
-    // orbe vocal anime (original) autour du bouton COMP : barres radiales pilotees par le niveau de sortie
-    const auto c = orbArea.getCentre().toFloat();
-    const float kr = (float) compMacro.getWidth() * 0.5f;
-    const int N = 72;
-    for (int i = 0; i < N; ++i)
+    // rayons autour du crane : longueur pilotee par le niveau de sortie
     {
-        const float a = juce::MathConstants<float>::twoPi * (float) i / (float) N;
-        const float wob = 0.5f + 0.5f * std::sin (a * 5.f + phase) * std::sin (a * 3.f - phase * 0.7f);
-        const float len = kr * (0.04f + 0.28f * outLvl * (0.35f + wob));
-        const float r0 = kr * 1.08f, r1 = r0 + len;
-        g.setColour (amberHi.withAlpha (0.25f + 0.6f * outLvl * wob));
-        g.drawLine (c.x + std::sin (a) * r0, c.y - std::cos (a) * r0, c.x + std::sin (a) * r1, c.y - std::cos (a) * r1, std::max (1.5f, (float) W * 0.0025f));
-    }
-
-    // titres de rangees
-    const float tfs = (float) H * 0.075f;
-    for (auto& r : rows)
-    {
-        const bool on = proc.getParam (r.onIdx) > 0.5f;
-        g.setColour (on ? juce::Colours::white : juce::Colours::white.withAlpha (0.35f));
-        g.setFont (juce::Font (juce::FontOptions (tfs, juce::Font::bold)));
-        g.drawFittedText (r.title, r.band.withWidth ((int) ((float) r.band.getWidth() * 0.20f)).translated (10, 0).reduced (0, 4), juce::Justification::centredLeft, 1, 0.55f);
-        if (r.title == "TUNE" && on)
+        const auto c = P (530.f, 535.f);
+        const int N = (int) rayBase.size();
+        const float r0 = 222.f * s;
+        for (int i = 0; i < N; ++i)
         {
-            const float d = proc.engine.tuner().detMidi.load(), t = proc.engine.tuner().tgtMidi.load();
-            g.setFont (juce::Font (juce::FontOptions (tfs * 0.42f, juce::Font::bold)));
-            g.setColour (amberHi);
-            g.drawText (NoteDisplay::noteName (d) + " > " + NoteDisplay::noteName (t), r.band.withTrimmedTop (r.band.getHeight() * 3 / 4).withWidth ((int) ((float) r.band.getWidth() * 0.19f)).translated (10, 0), juce::Justification::centredLeft);
+            const float a = juce::MathConstants<float>::twoPi * (float) i / (float) N + 0.04f;
+            if (std::cos (a) < -0.72f) continue;   // pas de rayon vers le mot COMP
+            const float wob = 0.5f + 0.5f * std::sin (a * 5.f + phase) * std::sin (a * 3.f - phase * 0.7f);
+            const float len = (30.f + 120.f * rayBase[(size_t) i]) * s * (0.55f + 0.9f * outLvl * (0.45f + wob));
+            g.setColour (juce::Colour (0xff0067be).withAlpha (0.55f + 0.4f * outLvl));
+            g.drawLine (c.x + std::sin (a) * r0, c.y - std::cos (a) * r0, c.x + std::sin (a) * (r0 + len), c.y - std::cos (a) * (r0 + len), std::max (2.f, 8.f * s));
+        }
+        // yeux du crane qui s'allument avec la voix
+        if (outLvl > 0.04f)
+        {
+            for (auto e : { P (418.f, 549.f), P (647.f, 558.f) })
+            {
+                g.setColour (bCyan.withAlpha (0.10f + 0.5f * outLvl));
+                g.drawEllipse (e.x - 46.f * s, e.y - 46.f * s, 92.f * s, 92.f * s, std::max (2.f, 9.f * s));
+            }
         }
     }
 
-    // titre central
-    g.setFont (juce::Font (juce::FontOptions ((float) H * 0.10f, juce::Font::bold | juce::Font::italic)));
-    g.setColour (juce::Colours::black.withAlpha (0.35f));
-    g.drawFittedText ("Fck ThaVOICE", titleArea.translated (3, 4), juce::Justification::centred, 1, 0.6f);
-    g.setGradientFill (juce::ColourGradient (amberHi, 0, (float) titleArea.getY(), amberDark, 0, (float) titleArea.getBottom(), false));
-    g.drawFittedText ("Fck ThaVOICE", titleArea, juce::Justification::centred, 1, 0.6f);
-    g.setColour (juce::Colours::white.withAlpha (0.45f));
-    g.setFont (juce::Font (juce::FontOptions ((float) H * 0.028f)));
-    g.drawText ("VOCAL SUITE", titleArea.withTrimmedTop ((int) ((float) titleArea.getHeight() * 0.78f)), juce::Justification::centred);
+    // textes des plaques (police de la maquette quand elle existe)
+    auto plateText = [&] (const juce::String& t, juce::Rectangle<float> r, float fh, juce::Colour col)
+    {
+        const auto rr = M (r);
+        g.setColour (col);
+        g.setFont (plateFont (fh * s));
+        g.drawFittedText (t.toUpperCase(), rr, juce::Justification::centred, 1, 0.3f);
+    };
+    plateText (keyBox->getText(), { 1338.f, 410.f, 84.f, 72.f }, 74.f, bBlue);
+    plateText (scaleBox->getText(), { 1442.f, 412.f, 120.f, 74.f }, 52.f, juce::Colours::white);
+    plateText (noteBox->getText(), { 1662.f, 790.f, 100.f, 58.f }, 66.f, bBlue);
+    plateText (modeBox->getText(), { 1748.f, 950.f, 116.f, 62.f }, 58.f, bNavy);
+    plateText (presets.getText(), { 912.f, 44.f, 420.f, 70.f }, 66.f, juce::Colours::white);
+    if (measuring) plateText ("...", { 573.f, 20.f, 213.f, 113.f }, 80.f, bBlue);
 
-    // barres IN / OUT + repere de niveau conseille
-    // zone cible de l'entree : -18 .. -9 dB (la barre va de -60 a 0 dB)
+    // note detectee > note visee (autotune)
+    if (proc.getParam (tuneOn) > 0.5f && proc.engine.tuner().detMidi.load() > 1.f)
+    {
+        const float d = proc.engine.tuner().detMidi.load(), t = proc.engine.tuner().tgtMidi.load();
+        g.setFont (plateFont (26.f * s));
+        g.setColour (bCyan);
+        g.drawText (NoteDisplay::noteName (d) + " > " + NoteDisplay::noteName (t), noteArea, juce::Justification::centredLeft);
+    }
+
+    // rangees eteintes : on assombrit les etiquettes figees du fond
+    for (auto& r : rows)
+        if (proc.getParam (r.onIdx) < 0.5f)
+        {
+            g.setColour (juce::Colour (0xff04003e).withAlpha (0.38f));
+            g.fillRect (M (r.dimR));
+        }
+
+    // barres IN / OUT + zone TARGET (-18 .. -9 dB sur une barre de -60 a 0 dB)
     const float zLo = 42.f / 60.f, zHi = 51.f / 60.f;
     const bool silent = inHold < 0.03f;
-    const int status = silent ? 0 : (inHold < zLo ? 1 : (inHold <= zHi + 0.01f ? 2 : 3));   // 0 rien, 1 trop bas, 2 OK, 3 trop fort
+    const int status = silent ? 0 : (inHold < zLo ? 1 : (inHold <= zHi + 0.01f ? 2 : 3));
     const juce::Colour okG { 0xff4cd964 }, lowC { 0xfff6b53c }, hotC { 0xffff4a3d };
-    auto bar = [&] (juce::Rectangle<int> b, float lvl, bool right, juce::Colour c0, juce::Colour c1)
+    auto bar = [&] (juce::Rectangle<int> b, float lvl, bool right, juce::Colour fill)
     {
         const auto f = b.toFloat();
-        g.setColour (wineDark.withAlpha (0.85f)); g.fillRoundedRectangle (f, f.getHeight() * 0.5f);
-        const float w = f.getWidth() * lvl;
-        g.setGradientFill (juce::ColourGradient (c0, f.getX(), 0, c1, f.getRight(), 0, false));
+        g.setColour (juce::Colour (0xff1428b4)); g.fillRoundedRectangle (f, f.getHeight() * 0.5f);
+        const float w = std::max (f.getHeight(), f.getWidth() * lvl);
+        if (lvl <= 0.003f) return;
+        g.setColour (fill);
         if (right) g.fillRoundedRectangle (f.getRight() - w, f.getY(), w, f.getHeight(), f.getHeight() * 0.5f);
         else g.fillRoundedRectangle (f.getX(), f.getY(), w, f.getHeight(), f.getHeight() * 0.5f);
     };
-    {
-        const juce::Colour c = status == 2 ? okG : (status == 3 ? hotC : amberHi);
-        bar (inBar, inLvl, false, status == 2 ? okG.darker (0.4f) : (status == 3 ? hotC.darker (0.4f) : amberDark), c);
-    }
-    bar (outBar, outLvl, true, amberDark, amberHi);
+    bar (inBar, inLvl, false, status == 2 ? okG : (status == 3 ? hotC : bBlue.brighter (0.5f)));
+    bar (outBar, outLvl, true, bBlue.brighter (0.5f));
     {
         const float bx0 = (float) inBar.getX() + (float) inBar.getWidth() * zLo, bx1 = (float) inBar.getX() + (float) inBar.getWidth() * zHi;
-        const float by0 = (float) inBar.getY() - 3.f, bh0 = (float) inBar.getHeight() + 6.f;
-        // la zone cible : cadre bien visible autour de la partie de la barre a atteindre
-        g.setColour (okG.withAlpha (status == 2 ? 0.35f : 0.18f));
-        g.fillRoundedRectangle (bx0, by0, bx1 - bx0, bh0, 5.f);
-        g.setColour (status == 2 ? okG : juce::Colours::white.withAlpha (0.85f));
-        g.drawRoundedRectangle (bx0, by0, bx1 - bx0, bh0, 5.f, 2.f);
+        const float by0 = (float) inBar.getY() - 4.f * s, bh0 = (float) inBar.getHeight() + 8.f * s;
+        g.setColour (juce::Colours::white.withAlpha (status == 2 ? 0.34f : 0.20f));
+        g.fillRoundedRectangle (bx0, by0, bx1 - bx0, bh0, 8.f * s);
+        g.setColour (status == 2 ? okG : juce::Colours::white.withAlpha (0.55f));
+        g.drawRoundedRectangle (bx0, by0, bx1 - bx0, bh0, 8.f * s, std::max (1.5f, 2.5f * s));
         const char* msg = status == 0 ? "TARGET" : (status == 1 ? "TOO LOW" : (status == 2 ? "TARGET OK" : "TOO LOUD"));
-        g.setColour (status == 0 ? juce::Colours::white.withAlpha (0.85f) : (status == 1 ? lowC : (status == 2 ? okG : hotC)));
-        g.setFont (juce::Font (juce::FontOptions ((float) H * 0.03f, juce::Font::bold)));
-        g.drawText (msg, (int) bx0 - 70, inBar.getY() - (int) ((float) H * 0.045f), (int) (bx1 - bx0) + 140, (int) ((float) H * 0.035f), juce::Justification::centred);
+        g.setColour (status == 0 ? juce::Colour (0xff6a72b8) : (status == 1 ? lowC : (status == 2 ? okG : hotC)));
+        g.setFont (plateFont (30.f * s));
+        g.drawText (msg, (int) (bx0 + bx1) / 2 - (int) (70.f * s), (int) (by0 - 34.f * s), (int) (140.f * s), (int) (32.f * s), juce::Justification::centred);
     }
-    g.setColour (juce::Colours::white);
-    g.setFont (juce::Font (juce::FontOptions ((float) H * 0.05f, juce::Font::bold)));
-    g.drawText ("IN", inKnob->getRight() + 4, inBar.getY() - 8, 104, inBar.getHeight() + 16, juce::Justification::centredLeft);
-    g.drawText ("OUT", outKnob->getX() - 110, outBar.getY() - 8, 104, outBar.getHeight() + 16, juce::Justification::centredRight);
 }
 
 
