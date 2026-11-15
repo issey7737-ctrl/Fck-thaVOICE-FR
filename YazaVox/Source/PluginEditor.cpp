@@ -975,6 +975,16 @@ void BlueLAF::drawToggleButton (juce::Graphics& g, juce::ToggleButton& b, bool o
     const auto r = b.getLocalBounds().toFloat();
     const bool on = b.getToggleState();
     const auto mode = b.getProperties().getWithDefault ("mode", "dim").toString();
+    if (mode == "plate")     // petite plaque bleue (allumee = bleu vif, eteinte = assombrie)
+    {
+        g.setColour (on ? bBlue : juce::Colour (0xff0b1470));
+        g.fillRoundedRectangle (r.reduced (1.f), 5.f);
+        g.setColour (on ? juce::Colours::white : juce::Colour (0xff7480c8));
+        g.setFont (plateFont (r.getHeight() * 0.56f));
+        g.drawFittedText (b.getButtonText(), b.getLocalBounds().reduced (4, 0), juce::Justification::centred, 1, 0.6f);
+        if (over) { g.setColour (juce::Colours::white.withAlpha (0.14f)); g.fillRoundedRectangle (r.reduced (1.f), 5.f); }
+        return;
+    }
     if (mode == "lever")     // interrupteur ON/OFF de TUNE
     {
         const float w = r.getWidth() * 0.46f, x = r.getCentreX() - w * 0.5f, y0 = r.getY() + r.getHeight() * 0.16f, h = r.getHeight() * 0.68f;
@@ -1074,6 +1084,7 @@ SimpleView::SimpleView (YazaVoxProcessor& p, std::function<void()> pro) : proc (
 
     // barre du haut
     addToggle (hpOn, "dim", { 335.f, 22.f, 238.f, 118.f });
+    addToggle (ploOn, "plate", { 30.f, 277.f, 240.f, 56.f })->setButtonText ("DE-PLOSIVE");
     autoIn.onClick = [this] { measuring = true; measureFrames = 45; measurePk = 0.f; };
     prevBtn.onClick = [this] { const int n = YazaVoxProcessor::presetNames().size(); selectPreset ((proc.getCurrentPreset() + n - 1) % n); };
     nextBtn.onClick = [this] { selectPreset ((proc.getCurrentPreset() + 1) % YazaVoxProcessor::presetNames().size()); };

@@ -171,7 +171,7 @@ void YazaVoxProcessor::applyPreset (int index)
         { "airOn", 1 }, { "airMid", 26 }, { "airHigh", 6 },
         { "compOn", 1 }, { "compThr", -24.6f }, { "compRatio", 3.9f }, { "compAtk", 1.7f }, { "compRel", 10 }, { "compKnee", 23 }, { "compMakeup", 11 },
         { "comp2On", 1 }, { "comp2Amt", 43 }, { "compWarm", 30 },   // reglages mesures sur un compresseur vocal de reference (Pro-C 2, style Vocal)
-        { "fxOn", 1 }, { "deessOn", 1 }, { "deessFreq", 7000 }, { "deessHigh", 14000 }, { "deessAmt", 55 }, { "deessRange", 12 }, { "deessMode", 0 }, { "deessBand", 0 },
+        { "fxOn", 1 }, { "deessOn", 1 }, { "deessFreq", 7000 }, { "deessHigh", 14000 }, { "deessAmt", 25 }, { "deessRange", 5 }, { "deessMode", 0 }, { "deessBand", 0 },
         { "satOn", 1 }, { "satDrive", 22 }, { "satTone", 8 }, { "satMix", 70 },
         { "widthOn", 1 }, { "width", 129 },
         { "dlyOn", 1 }, { "dlyMix", 8 }, { "dlyNote", 1 }, { "dlyFb", 68 }, { "dlyHP", 20 }, { "dlyLP", 20000 }, { "dlyDuck", 100 }, { "dlyPing", 0 },   // calibre sur un Fruity Delay 3 (1/8, feedback ~68 %, ducking sidechain voix)
@@ -187,7 +187,7 @@ void YazaVoxProcessor::applyPreset (int index)
         /* 0 Init */ {},
         /* 1 Rap Lead Clean */ mk ({ { "revMix", 12 }, { "dlyMix", 6 }, { "width", 125 } }),
         /* 2 Rap Lead Aggressive */ mk ({ { "compThr", -31 }, { "compRatio", 6 }, { "compAtk", 4 }, { "compRel", 70 }, { "compMakeup", 16 }, { "comp2Amt", 60 }, { "compWarm", 42 },
-                                        { "lmG", -4 }, { "hmG", 4 }, { "satDrive", 40 }, { "deessAmt", 62 }, { "deessRange", 14 }, { "revMix", 6 }, { "dlyMix", 4 }, { "width", 105 } }),
+                                        { "lmG", -4 }, { "hmG", 4 }, { "satDrive", 40 }, { "deessAmt", 32 }, { "deessRange", 6 }, { "revMix", 6 }, { "dlyMix", 4 }, { "width", 105 } }),
         /* 3 Rap Melodique (Autotune) */ mk (with (tune (5, 70, 30, 0, 95), { { "compWarm", 40 }, { "satDrive", 20 },
                                         { "revMix", 52 }, { "dlyMix", 12 }, { "width", 125 } })),
         /* 4 Chant Pop (Autotune) */ mk (with (tune (22, 80, 80, 20, 90), { { "compThr", -25 }, { "compRatio", 3 }, { "compAtk", 12 }, { "compKnee", 10 }, { "compMakeup", 10 },

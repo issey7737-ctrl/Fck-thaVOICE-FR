@@ -503,6 +503,80 @@ private:
     std::array<Chan, 2> ch;
 };
 
+// DE-PLOSIVE : enleve les "pops" des P/B (coup d'air dans le micro) sans toucher au reste de la voix.
+// Detection (comme les de-plosives de reference : RX, Sonnox) : une plosive = une rafale tres forte sous ~100 Hz, brusque, alors que
+// le medium de la voix (>250 Hz) n'a presque pas bouge. On compare donc l'energie sub a l'energie medium, et on ne baisse que les graves
+// (en dessous de FREQ) pendant la rafale, avec un filtre complementaire (sortie = entree - graves * (1-gain)) : aucun dephasage ni coloration
+// quand rien ne se passe, et la voix (corps, medium, aigus) reste intacte. Zero latence.
+class DePlosive
+{
+public:
+    void prepare (double fs)
+    {
+        sr = fs;
+        for (auto& c : ch) c = Chan();
+        envS = envM = envSlow = 0; gdB = 0;
+        slAtk = 1.0 - std::exp (-1.0 / (0.060 * sr)); slRel = 1.0 - std::exp (-1.0 / (0.250 * sr));
+        sAtk = 1.0 - std::exp (-1.0 / (0.0015 * sr));
+        sRel = std::exp (-1.0 / (0.020 * sr));
+        mAtk = 1.0 - std::exp (-1.0 / (0.0015 * sr));
+        mRel = std::exp (-1.0 / (0.120 * sr));
+        gAtk = 1.0 - std::exp (-1.0 / (0.0002 * sr));
+        gRel = 1.0 - std::exp (-1.0 / (0.060 * sr));
+        for (auto& c : ch)
+        {
+            c.d1.highPass (sr, 28.0, 0.7071); c.d2.lowPass (sr, 105.0, 0.7071);
+            c.m1.highPass (sr, 350.0, 0.7071); c.m2.highPass (sr, 350.0, 0.7071);
+        }
+        f0 = -1;
+    }
+    void setup (const float* v)
+    {
+        const double amt = clampd (v[ploAmt] / 100.0, 0.0, 1.0);
+        range = clampd (v[ploRange], 0.0, 24.0);
+        relThr = 10.0 - 10.0 * amt;           // ecart sub/medium (dB) a partir duquel on considere que c'est une plosive
+        const double fc = clampd (v[ploFreq], 60.0, 250.0);
+        if (std::abs (fc - f0) > 0.5)
+        {
+            f0 = fc;
+            for (auto& c : ch) c.lp.lowPass (sr, fc, 0.7071);
+        }
+    }
+    inline void process (double& l, double& r) noexcept
+    {
+        const double x[2] = { l, r };
+        double sp = 0, mp = 0, low[2];
+        for (int c = 0; c < 2; ++c)
+        {
+            auto& s = ch[(size_t) c];
+            sp = std::max (sp, std::abs (s.d2.process (s.d1.process (x[c]))));
+            mp = std::max (mp, std::abs (s.m2.process (s.m1.process (x[c]))));
+            low[c] = s.lp.process (x[c]);
+        }
+        envS = sp > envS ? envS + (sp - envS) * sAtk : sp + (envS - sp) * sRel;
+        envM = mp > envM ? envM + (mp - envM) * mAtk : mp + (envM - mp) * mRel;
+        envSlow += (envS - envSlow) * (envS > envSlow ? slAtk : slRel);
+        const double sDb = 20.0 * std::log10 (envS + 1e-9), mDb = 20.0 * std::log10 (envM + 1e-9), slDb = 20.0 * std::log10 (envSlow + 1e-9);
+        double target = 0.0;
+        // plosive = rafale sub BRUSQUE (elle depasse nettement le niveau sub moyen) ET sans medium : une note grave tenue ne declenche jamais
+        if (range > 0.01 && sDb > -46.0 && sDb - slDb > 4.0)
+        {
+            const double e = (sDb - mDb) - relThr;
+            if (e > 0.0) target = -std::min (range, e * 3.0);
+        }
+        gdB += (target - gdB) * (target < gdB ? gAtk : gRel);
+        if (gdB < -0.05)
+        {
+            const double k = 1.0 - dbToLin (gdB);
+            l = x[0] - low[0] * k; r = x[1] - low[1] * k;
+        }
+    }
+private:
+    struct Chan { Biquad d1, d2, m1, m2, lp; };
+    double sr = 48000, f0 = -1, range = 12, relThr = 13, envS = 0, envM = 0, envSlow = 0, slAtk = 0, slRel = 0, gdB = 0, sAtk = 0, sRel = 0, mAtk = 0, mRel = 0, gAtk = 0, gRel = 0;
+    std::array<Chan, 2> ch;
+};
+
 // AIR (dans l'esprit d'un exciteur "Mid Air / High Air") : harmoniques generees a partir de la bande 2.5-7 kHz (non-lineaire douce,
 // sans repliement car la source est limitee en bande), filtrees vers le haut, plus une legere mise en forme en plateau.
 // Les harmoniques sont reduites automatiquement quand les aigus sont deja forts (pas de durete sur les sibilantes).
@@ -1371,7 +1445,7 @@ public:
     {
         sr = sampleRate;
         tmpL.assign (16384, 0.f); tmpR.assign (16384, 0.f);
-        comp.prepare (sr); eq.prepare (sr); des.prepare (sr); air.prepare (sr); wdr.prepare (sr); sat.prepare (sr); dbl.prepare (sr); cho.prepare (sr);
+        comp.prepare (sr); eq.prepare (sr); plo.prepare (sr); des.prepare (sr); air.prepare (sr); wdr.prepare (sr); sat.prepare (sr); dbl.prepare (sr); cho.prepare (sr);
         phn.prepare (sr); dly.prepare (sr); rev.prepare (sr); tune.prepare (sr); lim.prepare (sr);
         dryLine[0].init (tune.latency() + 8); dryLine[1].init (tune.latency() + 8);
         rampStep = 1.0 / (0.02 * sr);
@@ -1386,12 +1460,12 @@ public:
     void process (float* l, float* r, int n)
     {
         const float* v = p.data();
-        comp.setup (v); eq.setup (v); des.setup (v); air.setup (v); sat.setup (v); dbl.setup (v); cho.setup (v); phn.setup (v);
+        comp.setup (v); eq.setup (v); plo.setup (v); des.setup (v); air.setup (v); sat.setup (v); dbl.setup (v); cho.setup (v); phn.setup (v);
         dly.setup (v, bpm); rev.setup (v); tune.setup (v); lim.setCeiling (v[limCeil]);
 
         const bool on[kRamps] = { v[eqOn] > 0.5f, v[compOn] > 0.5f, v[fxOn] > 0.5f && v[deessOn] > 0.5f, v[fxOn] > 0.5f && v[satOn] > 0.5f, v[airOn] > 0.5f,
                                   v[fxOn] > 0.5f && v[dblOn] > 0.5f, v[fxOn] > 0.5f && v[choOn] > 0.5f, v[fxOn] > 0.5f && v[phoneOn] > 0.5f,
-                                  v[fxOn] > 0.5f && v[widthOn] > 0.5f, v[dlyOn] > 0.5f, v[revOn] > 0.5f };
+                                  v[fxOn] > 0.5f && v[widthOn] > 0.5f, v[dlyOn] > 0.5f, v[revOn] > 0.5f, v[ploOn] > 0.5f };
         if (first) { for (int i = 0; i < kRamps; ++i) ramp[(size_t) i] = on[i] ? 1.0 : 0.0; byp = v[bypass] > 0.5f ? 1.0 : 0.0; first = false; }
         const double inTarget = dbToLin (v[inGain]), outTarget = dbToLin (v[outGain]);
         const double dMix = dly.mixAmount(), rMix = rev.mixAmount();
@@ -1424,6 +1498,7 @@ public:
             const double dlyDryL = dryLine[0].read ((double) tune.latency()), dlyDryR = dryLine[1].read ((double) tune.latency());
             double xl = tmpL[(size_t) i], xr = tmpR[(size_t) i];
 
+            if (ramp[rPlo] > 0.0) { double a = xl, b = xr; plo.process (a, b); mixIn (xl, xr, a, b, ramp[rPlo]); }   // en premier : avant l'EQ et le compresseur
             if (ramp[rEq] > 0.0)  { double a = xl, b = xr; eq.process (a, b);   mixIn (xl, xr, a, b, ramp[rEq]); }
             if (ramp[rComp] > 0.0){ double a = xl, b = xr; comp.process (a, b); mixIn (xl, xr, a, b, ramp[rComp]); }
             if (ramp[rDes] > 0.0) { double a = xl, b = xr; des.process (a, b);  mixIn (xl, xr, a, b, ramp[rDes]); }
@@ -1468,7 +1543,7 @@ public:
     }
 
 private:
-    enum { rEq = 0, rComp, rDes, rSat, rAir, rDbl, rCho, rPhn, rWid, rDly, rRev, kRamps };
+    enum { rEq = 0, rComp, rDes, rSat, rAir, rDbl, rCho, rPhn, rWid, rDly, rRev, rPlo, kRamps };
     static inline void mixIn (double& xl, double& xr, double a, double b, double t) noexcept
     {
         xl += (a - xl) * t; xr += (b - xr) * t;
@@ -1490,6 +1565,6 @@ private:
     Delay dryLine[2];
     std::vector<float> tmpL, tmpR;
     Tune tune; Limiter lim;
-    Comp comp; EQ eq; DeEsser des; Air air; Wider wdr; Saturator sat; Doubler dbl; Chorus cho; Phone phn; DelayFx dly; Reverb rev;
+    Comp comp; EQ eq; DePlosive plo; DeEsser des; Air air; Wider wdr; Saturator sat; Doubler dbl; Chorus cho; Phone phn; DelayFx dly; Reverb rev;
 };
 } // namespace yv
