@@ -60,7 +60,7 @@ struct Def
     X(deessFreq,  "deessFreq",  "LOW",      2000, 12000, 5000, 10,  0.5, KFloat,  " Hz",     MFx,     "DE-ESSER") \
     X(deessHigh,  "deessHigh",  "HIGH",     4000, 18000, 10000, 10, 0.5, KFloat,  " Hz",     MFx,     "DE-ESSER") \
     X(deessAmt,   "deessAmt",   "THRESH",   0,   100, 25,   1,    1,   KFloat,  " %",       MFx,     "DE-ESSER") \
-    X(deessRange, "deessRange", "RANGE",    0,   24,  5,   0.1,  1,   KFloat,  " dB",      MFx,     "DE-ESSER") \
+    X(deessRange, "deessRange", "RANGE",    0,   24,  5,    0.1,  1,   KFloat,  " dB",      MFx,     "DE-ESSER") \
     X(deessMode,  "deessMode",  "MODE",     0,   1,   0,    1,    1,   KChoice, "Single vocal|Allround", MFx, "DE-ESSER") \
     X(deessBand,  "deessBand",  "BAND",     0,   1,   0,    1,    1,   KChoice, "Split band|Wide band", MFx, "DE-ESSER") \
     X(deessListen,"deessListen","LISTEN",   0,   1,   0,    1,    1,   KBool,   "",         MFx,     "DE-ESSER") \
@@ -71,10 +71,6 @@ struct Def
     X(airOn,      "airOn",      "ON",       0,   1,   0,    1,    1,   KBool,   "",         MEq,     "AIR") \
     X(airMid,     "airMid",     "MID AIR",  0,   100, 35,   1,    1,   KFloat,  " %",       MEq,     "AIR") \
     X(airHigh,    "airHigh",    "HIGH AIR", 0,   100, 45,   1,    1,   KFloat,  " %",       MEq,     "AIR") \
-    X(ploOn,      "ploOn",      "ON",       0,   1,   0,    1,    1,   KBool,   "",         MEq,     "DE-PLOSIVE") \
-    X(ploAmt,     "ploAmt",     "SENSITIVITY", 0,  100, 50,   1,    1,   KFloat,  " %",       MEq,     "DE-PLOSIVE") \
-    X(ploRange,   "ploRange",   "RANGE",    0,   24,  12,   0.1,  1,   KFloat,  " dB",      MEq,     "DE-PLOSIVE") \
-    X(ploFreq,    "ploFreq",    "FREQ",     60,  250, 120,  1,    0.5, KFloat,  " Hz",      MEq,     "DE-PLOSIVE") \
     X(dblOn,      "dblOn",      "ON",       0,   1,   0,    1,    1,   KBool,   "",         MFx,     "DOUBLER") \
     X(dblAmt,     "dblAmt",     "AMOUNT",   0,   100, 35,   1,    1,   KFloat,  " %",       MFx,     "DOUBLER") \
     X(dblSpread,  "dblSpread",  "SPREAD",   0,   100, 60,   1,    1,   KFloat,  " %",       MFx,     "DOUBLER") \
