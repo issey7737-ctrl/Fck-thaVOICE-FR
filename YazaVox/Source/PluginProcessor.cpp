@@ -52,8 +52,8 @@ void YazaVoxProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 void YazaVoxProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
 {
     juce::ScopedNoDenormals noDenormals;
-    const int ch = std::max (1, std::min (2, getMainBusNumInputChannels())), n = buffer.getNumSamples();
-    if (ch < 1 || n < 1) return;
+    const int ch = std::max (1, std::min ({ 2, getMainBusNumInputChannels(), buffer.getNumChannels() })), n = buffer.getNumSamples();
+    if (buffer.getNumChannels() < 1 || n < 1) return;   // garde-fou : jamais de pointeur nul si l'hote donne moins de canaux que prevu
 
     for (int i = 0; i < Count; ++i) cur[(size_t) i] = raw[(size_t) i]->load();
     engine.setParams (cur.data());

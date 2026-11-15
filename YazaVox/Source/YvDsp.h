@@ -1385,6 +1385,7 @@ public:
 
     void process (float* l, float* r, int n)
     {
+        if (tmpL.size() < 16384) return;      // garde-fou : pas encore prepare (l'hote appelle toujours prepareToPlay avant, mais on ne plante jamais)
         const float* v = p.data();
         comp.setup (v); eq.setup (v); des.setup (v); air.setup (v); sat.setup (v); dbl.setup (v); cho.setup (v); phn.setup (v);
         dly.setup (v, bpm); rev.setup (v); tune.setup (v); lim.setCeiling (v[limCeil]);
