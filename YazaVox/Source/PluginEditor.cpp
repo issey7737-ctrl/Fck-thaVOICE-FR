@@ -1377,11 +1377,10 @@ void SimpleView::paint (juce::Graphics& g)
         {
             const float grow = 1.f + 0.05f * outLvl, bob = std::sin (phase * 1.7f) * 4.f * s * outLvl;
             const float fw = (float) folderScaled.getWidth(), fh = (float) folderScaled.getHeight();
-            if (m < 0.003f && outLvl < 0.02f) g.drawImageAt (folderScaled, juce::roundToInt (c.x - fw * 0.5f), juce::roundToInt (c.y - fh * 0.5f));
-            else
+            
             {
                 g.setImageResamplingQuality (juce::Graphics::mediumResamplingQuality);
-                g.drawImageTransformed (folderScaled, juce::AffineTransform::translation (-fw * 0.5f, -fh * 0.5f).scaled (grow).rotated (m * sweep).translated (c.x, c.y + bob));
+                g.drawImageTransformed (folderScaled, juce::AffineTransform::translation (-fw * 0.5f, -fh * 0.5f).scaled (grow).rotated (juce::degreesToRadians (-22.7f) + m * juce::MathConstants<float>::pi).translated (c.x, c.y + bob));
             }
         }
         inkText (g, juce::String (juce::roundToInt (arcShown * 100.f)) + "%", Rf (kRingCx - 90.f, 748.f, 180.f, 50.f), 44.f * s);
