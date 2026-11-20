@@ -1310,7 +1310,7 @@ void SimpleView::resized()
     scale = std::min (W / kDW, H / kDH);
     offX = (W - kDW * scale) * 0.5f; offY = (H - kDH * scale) * 0.5f;
     for (auto& pl : places) pl.c->setBounds (M (pl.r));
-    orbArea = M (kRingCx - 262.f, kRingCy - 262.f, 524.f, 524.f).getIntersection (getLocalBounds());
+    orbArea = M (kRingCx - 262.f, kRingCy - 262.f, 524.f, 590.f).getIntersection (getLocalBounds());
     inBar = M (32.f, 945.f, 492.f, 88.f);
     outBar = M (862.f, 945.f, 488.f, 88.f);
     targetArea = M (290.f, 915.f, 230.f, 42.f);
@@ -1349,7 +1349,7 @@ void SimpleView::paint (juce::Graphics& g)
     }
 
     // anneau COMP + dossier
-    if (vis ({ kRingCx - 262.f, kRingCy - 262.f, 524.f, 524.f }))
+    if (vis ({ kRingCx - 262.f, kRingCy - 262.f, 524.f, 590.f }))
     {
         const auto c = juce::Point<float> (offX + kRingCx * s, offY + kRingCy * s);
         const float R = kRingR * s, th = 15.f * s;
@@ -1361,32 +1361,30 @@ void SimpleView::paint (juce::Graphics& g)
         }
         g.setColour (juce::Colours::black);
         g.drawEllipse (c.x - R, c.y - R, R * 2.f, R * 2.f, th);
-        const float m = juce::jlimit (0.f, 0.9995f, arcShown);
-        const float a1 = -juce::MathConstants<float>::halfPi, a0 = a1 - m * juce::MathConstants<float>::twoPi;
+        const float m = juce::jlimit (0.f, 1.f, arcShown), sweep = juce::degreesToRadians (300.f);
+        const float a1 = juce::MathConstants<float>::pi, a0 = a1 - m * sweep;     // le vert part du bas (minimum) et monte par la droite
         if (m > 0.003f)
         {
             juce::Path arc; arc.addCentredArc (c.x, c.y, R, R, 0.f, a0, a1, true);
             g.setColour (kLime);
             g.strokePath (arc, juce::PathStrokeType (th, juce::PathStrokeType::curved, juce::PathStrokeType::butt));
         }
-        {   // repere rouge au bout de l'arc
-            juce::Path mk; mk.addRectangle (-4.5f * s, -(kRingR + 20.f) * s, 9.f * s, 40.f * s);
+        {   // repere rouge fixe en bas = minimum
             g.setColour (juce::Colour (0xffff1010));
-            g.fillPath (mk, juce::AffineTransform::rotation (a0).translated (c.x, c.y));
+            g.fillRect (c.x - 4.5f * s, c.y + (kRingR - 20.f) * s, 9.f * s, 40.f * s);
         }
-        if (folderScaled.isValid())
+        if (folderScaled.isValid())     // le dossier EST le bouton : droit a 0 %, il tourne avec la valeur
         {
-            const float tilt = std::sin (phase * 0.9f) * 0.045f * outLvl, grow = 1.f + 0.05f * outLvl, bob = std::sin (phase * 1.7f) * 4.f * s * outLvl;
+            const float grow = 1.f + 0.05f * outLvl, bob = std::sin (phase * 1.7f) * 4.f * s * outLvl;
             const float fw = (float) folderScaled.getWidth(), fh = (float) folderScaled.getHeight();
-            const float fcx = offX + (212.f + 346.f * 0.5f) * s, fcy = offY + (316.f + 379.f * 0.5f) * s;
-            if (outLvl < 0.02f) g.drawImageAt (folderScaled, juce::roundToInt (fcx - fw * 0.5f), juce::roundToInt (fcy - fh * 0.5f));
+            if (m < 0.003f && outLvl < 0.02f) g.drawImageAt (folderScaled, juce::roundToInt (c.x - fw * 0.5f), juce::roundToInt (c.y - fh * 0.5f));
             else
             {
                 g.setImageResamplingQuality (juce::Graphics::mediumResamplingQuality);
-                g.drawImageTransformed (folderScaled, juce::AffineTransform::translation (-fw * 0.5f, -fh * 0.5f).scaled (grow).rotated (tilt).translated (fcx, fcy + bob));
+                g.drawImageTransformed (folderScaled, juce::AffineTransform::translation (-fw * 0.5f, -fh * 0.5f).scaled (grow).rotated (-m * sweep).translated (c.x, c.y + bob));
             }
         }
-        inkText (g, juce::String (juce::roundToInt (arcShown * 100.f)) + "%", Rf (kRingCx - 90.f, 735.f, 180.f, 56.f), 50.f * s);
+        inkText (g, juce::String (juce::roundToInt (arcShown * 100.f)) + "%", Rf (kRingCx - 90.f, 748.f, 180.f, 50.f), 44.f * s);
     }
 
     // rangees eteintes : on assombrit
@@ -1409,6 +1407,18 @@ void SimpleView::paint (juce::Graphics& g)
             g.setColour (kOrange);
             g.drawText (NoteDisplay::noteName (d) + " > " + NoteDisplay::noteName (t), noteArea.toFloat(), juce::Justification::centredRight, true);
         }
+    }
+
+    // petits noms sous les boutons du panneau (meme police que le reste)
+    if (vis ({ 1030.f, 300.f, 560.f, 600.f }))
+    {
+        struct L { float x, y; const char* t; };
+        static const L ls[] = { { 1122, 285, "LOW" }, { 1248, 285, "LOW MID" }, { 1376, 285, "HI MID" }, { 1530, 285, "HIGH" },
+                                { 1418, 415, "SPEED" }, { 1530, 415, "HUMAN" },
+                                { 1073, 552, "DE-ESS" }, { 1192, 552, "SAT" }, { 1305, 552, "PHONE" }, { 1417, 552, "DOUBLE" }, { 1530, 552, "CHORUS" },
+                                { 1073, 692, "MIX" }, { 1194, 692, "REPEAT" }, { 1305, 692, "TONE" },
+                                { 1073, 830, "MIX" }, { 1193, 830, "DECAY" }, { 1305, 830, "SIZE" }, { 1417, 828, "DUCK" } };
+        for (auto& l : ls) inkText (g, l.t, Rf (l.x - 42.f, l.y + 41.f, 84.f, 19.f), 18.f * s);
     }
 
     // plaques du haut (le texte est a nous : le nom du preset change)
