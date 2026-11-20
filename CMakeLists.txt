@@ -23,7 +23,7 @@ juce_add_plugin(YazaVox
     FORMATS VST3
     PRODUCT_NAME "Fck ThaVOICE")
 
-juce_add_binary_data(YazaVoxAssets SOURCES YazaVox/Assets/ui_bg.png)
+juce_add_binary_data(YazaVoxAssets SOURCES YazaVox/Assets/ui_bg.png YazaVox/Assets/ui_folder.png)
 
 target_sources(YazaVox PRIVATE
     YazaVox/Source/PluginProcessor.cpp

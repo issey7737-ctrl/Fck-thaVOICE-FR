@@ -262,11 +262,11 @@ private:
     float grSmooth = 0.f;
 };
 
-// Look de la vue Simple (maquette bleue) : boutons dessines par le code par-dessus le fond fixe
-class BlueLAF : public juce::LookAndFeel_V4
+// Look de la vue Simple (colline XP) : boutons dessines par le code par-dessus le fond fixe
+class XpLAF : public juce::LookAndFeel_V4
 {
 public:
-    BlueLAF();
+    XpLAF();
     void drawRotarySlider (juce::Graphics&, int x, int y, int w, int h, float pos, float a0, float a1, juce::Slider&) override;
     void drawToggleButton (juce::Graphics&, juce::ToggleButton&, bool over, bool down) override;
     void drawButtonBackground (juce::Graphics&, juce::Button&, const juce::Colour&, bool over, bool down) override;
@@ -278,27 +278,34 @@ class SimpleView : public juce::Component
 {
 public:
     SimpleView (YazaVoxProcessor&, std::function<void()> onPro);
-    ~SimpleView() override { setLookAndFeel (nullptr); }
+    ~SimpleView() override;
     void pushLevels (float inPk, float outPk);
     void refresh();
     void paint (juce::Graphics&) override;
     void resized() override;
+    void mouseEnter (const juce::MouseEvent& e) override { hoverFrom (e, false); }
+    void mouseExit (const juce::MouseEvent& e) override { hoverFrom (e, true); }
+    void mouseDrag (const juce::MouseEvent& e) override { hoverFrom (e, false); }
+    void mouseUp (const juce::MouseEvent& e) override { hoverFrom (e, false); }
+    void mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDetails&) override { hoverFrom (e, false); }
 private:
     struct Row { int onIdx; juce::Rectangle<float> dimR; };
-    struct Place { juce::Component* c; juce::Rectangle<float> r; };   // rectangle dans le repere 1920x1080 de la maquette
+    struct Place { juce::Component* c; juce::Rectangle<float> r; juce::String tip; };   // rectangle dans le repere 1654x1040 du design
     void setComp (float m01);
     void selectPreset (int i);
+    void hoverFrom (const juce::MouseEvent&, bool leaving);
+    void setHover (const juce::String&);
     juce::Rectangle<int> M (const juce::Rectangle<float>& r) const;
     juce::Rectangle<int> M (float x, float y, float w, float h) const { return M (juce::Rectangle<float> (x, y, w, h)); }
-    juce::ComboBox* addBox (int paramIdx, juce::Rectangle<float> r);
-    juce::ToggleButton* addToggle (int paramIdx, const char* mode, juce::Rectangle<float> r);
-
+    juce::Rectangle<float> Rf (float x, float y, float w, float h) const { return { offX + x * scale, offY + y * scale, w * scale, h * scale }; }
+    juce::ComboBox* addBox (int paramIdx, juce::Rectangle<float> r, const char* tip);
+    juce::ToggleButton* addToggle (int idx, const char* mode, juce::Rectangle<float> r, const char* tip, const char* text = "");
     YazaVoxProcessor& proc;
-    BlueLAF laf;
+    XpLAF laf;
     std::function<void()> onPro;
 
     juce::Slider compMacro;
-    juce::TextButton autoIn { "" }, autoVoice { "AUTO VOIX" }, prevBtn { "" }, nextBtn { "" }, proBtn { "" };
+    juce::TextButton autoIn { "AUTO IN" }, autoVoice { "AUTO VOIX" }, prevBtn { "" }, nextBtn { "" }, proBtn { "PRO!" };
     juce::ComboBox presets;
     int autoShow = 0;
 
@@ -308,18 +315,19 @@ private:
     std::vector<Place> places;
     std::vector<Row> rows;
     juce::ComboBox *keyBox = nullptr, *scaleBox = nullptr, *noteBox = nullptr, *modeBox = nullptr;
+    juce::ToggleButton *tuneLever = nullptr, *pongBtn = nullptr;
     AmberKnob *inKnob = nullptr, *outKnob = nullptr;
-    juce::String shown[5];
+    juce::String shown[5], hover, hoverShown;
 
-    float inLvl = 0.f, outLvl = 0.f, phase = 0.f, inHold = 0.f;
-    float shownIn = -1.f, shownOut = -1.f, shownPhase = -1.f;
+    float inLvl = 0.f, outLvl = 0.f, phase = 0.f, inHold = 0.f, arcShown = 0.f;
+    float shownIn = -1.f, shownOut = -1.f, shownPhase = -1.f, shownArc = -1.f;
+    int shownStatus = -1;
     bool syncing = false, measuring = false;
     int measureFrames = 0, orbTick = 0, noteTick = 0;
     float measurePk = 0.f;
     float scale = 1.f, offX = 0.f, offY = 0.f;
-    std::array<float, 40> rayBase {};
-    juce::Rectangle<int> inBar, outBar, orbArea, targetArea, noteArea;
-    juce::Image bg, src;
+    juce::Rectangle<int> inBar, outBar, orbArea, noteArea, targetArea, sunArea, titleArea;
+    juce::Image bg, src, folder, folderScaled;
 };
 
 class YazaVoxEditor : public juce::AudioProcessorEditor, private juce::Timer
