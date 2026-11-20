@@ -1326,8 +1326,8 @@ void SimpleView::resized()
     g.drawImage (src, (int) std::round (offX), (int) std::round (offY), (int) std::round (kDW * scale), (int) std::round (kDH * scale),
                  0, 0, src.getWidth(), src.getHeight());
     if (folder.isValid())
-        folderScaled = folder.rescaled (std::max (1, (int) std::round ((float) folder.getWidth() * scale * kDW / (float) src.getWidth())),
-                                        std::max (1, (int) std::round ((float) folder.getHeight() * scale * kDH / (float) src.getHeight())),
+        folderScaled = folder.rescaled (std::max (1, (int) std::round ((float) folder.getWidth() * 0.88f * scale * kDW / (float) src.getWidth())),
+                                        std::max (1, (int) std::round ((float) folder.getHeight() * 0.88f * scale * kDH / (float) src.getHeight())),
                                         juce::Graphics::highResamplingQuality);
 }
 
@@ -1361,8 +1361,8 @@ void SimpleView::paint (juce::Graphics& g)
         }
         g.setColour (juce::Colours::black);
         g.drawEllipse (c.x - R, c.y - R, R * 2.f, R * 2.f, th);
-        const float m = juce::jlimit (0.f, 1.f, arcShown), sweep = juce::degreesToRadians (300.f);
-        const float a1 = juce::MathConstants<float>::pi, a0 = a1 - m * sweep;     // le vert part du bas (minimum) et monte par la droite
+        const float m = juce::jlimit (0.f, 1.f, arcShown), sweep = juce::MathConstants<float>::twoPi;
+        const float a0 = juce::MathConstants<float>::pi, a1 = a0 + std::min (m, 0.9995f) * sweep;     // le vert part du bas (minimum) et fait le tour par la gauche
         if (m > 0.003f)
         {
             juce::Path arc; arc.addCentredArc (c.x, c.y, R, R, 0.f, a0, a1, true);
@@ -1381,7 +1381,7 @@ void SimpleView::paint (juce::Graphics& g)
             else
             {
                 g.setImageResamplingQuality (juce::Graphics::mediumResamplingQuality);
-                g.drawImageTransformed (folderScaled, juce::AffineTransform::translation (-fw * 0.5f, -fh * 0.5f).scaled (grow).rotated (-m * sweep).translated (c.x, c.y + bob));
+                g.drawImageTransformed (folderScaled, juce::AffineTransform::translation (-fw * 0.5f, -fh * 0.5f).scaled (grow).rotated (m * sweep).translated (c.x, c.y + bob));
             }
         }
         inkText (g, juce::String (juce::roundToInt (arcShown * 100.f)) + "%", Rf (kRingCx - 90.f, 748.f, 180.f, 50.f), 44.f * s);
